@@ -492,8 +492,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       {/* App Version Info */}
       <div className="text-center pt-2 space-y-0.5">
-        <p className="text-[10px] font-bold text-[#6B6380]">神埼鉄道 NIIZAKI App v3.4.2</p>
-        <p className="text-[9px] text-[#857D99]">© Kanzaki Electric Railway Co., Ltd.</p>
+        <p className="text-[10px] font-bold text-[#6B6380]">神埼鉄道 NIIZAKI App v3.5.2</p>
+        <p className="text-[9px] text-[#857D99]">© Nizaki Electric Railway Co., Ltd.</p>
       </div>
     </div>
   );
