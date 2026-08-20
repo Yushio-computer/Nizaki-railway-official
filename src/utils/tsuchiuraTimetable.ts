@@ -17,7 +17,7 @@ export interface TsuchiuraTrainPattern {
 
 // 下り (松戸 → 土浦・茨城空港・日立方面) パターン
 export const TSUCHIURA_DOWN_PATTERNS: TsuchiuraTrainPattern[] = [
-  // 1. 1200A 特急めぐり (松戸 13分発 -> 土浦 44分着/45分発 -> 日立 103分後着)
+  // 1. 1200A 特急めぐり (松戸 13分発 -> 柏 -> 土浦 -> ひたちなか海浜公園 -> 日立 89分後着)
   {
     trainNo: '1200A',
     trainName: '特急めぐり',
@@ -27,12 +27,9 @@ export const TSUCHIURA_DOWN_PATTERNS: TsuchiuraTrainPattern[] = [
     stops: [
       { stationName: '松戸', arrMin: 13, depMin: 13 },
       { stationName: '柏', arrMin: 19, depMin: 20 },
-      { stationName: '守谷', arrMin: 30, depMin: 31 },
       { stationName: '土浦', arrMin: 44, depMin: 45 },
-      { stationName: '茨城空港', arrMin: 59, depMin: 60 },
-      { stationName: 'ひたちなか海浜公園', arrMin: 78, depMin: 79 },
-      { stationName: '大甕（おおみか）', arrMin: 90, depMin: 91 },
-      { stationName: '日立', arrMin: 103, depMin: 103 },
+      { stationName: 'ひたちなか海浜公園', arrMin: 71, depMin: 72 },
+      { stationName: '日立', arrMin: 89, depMin: 89 },
     ],
   },
   // 2. 1201列 各停 (松戸 05分発 -> 土浦 66分(06分)着 止まり)
@@ -78,7 +75,7 @@ export const TSUCHIURA_DOWN_PATTERNS: TsuchiuraTrainPattern[] = [
       { stationName: '日立', arrMin: 97, depMin: 97 },
     ],
   },
-  // 4. 土浦20分発 快速 / 区間快速（土浦始発：高浜・茨城空港・大洗・平磯・海浜公園・日立など主要拠点・観光地へ直行）
+  // 4. 土浦20分発 快速（土浦始発：高浜・茨城空港・平磯・海浜公園・日立へ直行）
   {
     trainNo: '1205列',
     trainName: '快速（土浦20分発・当駅始発）',
@@ -89,12 +86,9 @@ export const TSUCHIURA_DOWN_PATTERNS: TsuchiuraTrainPattern[] = [
       { stationName: '土浦', arrMin: 20, depMin: 20 }, // 土浦20分発 (土浦始発)
       { stationName: '高浜', arrMin: 32, depMin: 33 },
       { stationName: '茨城空港', arrMin: 40, depMin: 41 },
-      { stationName: '大洗', arrMin: 51, depMin: 52 },
-      { stationName: '平磯', arrMin: 58, depMin: 59 },
-      { stationName: 'ひたちなか海浜公園', arrMin: 65, depMin: 66 },
-      { stationName: '大甕（おおみか）', arrMin: 76, depMin: 77 },
-      { stationName: '多賀', arrMin: 82, depMin: 83 },
-      { stationName: '日立', arrMin: 89, depMin: 89 },
+      { stationName: '平磯', arrMin: 52, depMin: 53 },
+      { stationName: 'ひたちなか海浜公園', arrMin: 59, depMin: 60 },
+      { stationName: '日立', arrMin: 77, depMin: 77 },
     ],
   },
   // 5. 土浦40分発 各停（土浦始発・全駅フォロー：鹿島旭・那珂湊・久慈川等にも停車）
@@ -121,45 +115,42 @@ export const TSUCHIURA_DOWN_PATTERNS: TsuchiuraTrainPattern[] = [
       { stationName: '日立', arrMin: 137, depMin: 137 },
     ],
   },
-  // 6. 1209列 特別快速 (松戸 10分発 -> 土浦 48分着/50分発 -> 日立 108分後着)
+  // 6. 1209列 特別快速 (松戸 10分発 -> 柏 -> 土浦 -> 高浜 -> 茨城空港 68分後着)
   {
     trainNo: '1209列',
     trainName: '特別快速',
     trainType: '特別快速',
-    destination: '日立',
+    destination: '茨城空港',
     direction: 1,
     stops: [
       { stationName: '松戸', arrMin: 10, depMin: 10 },
       { stationName: '柏', arrMin: 18, depMin: 19 },
-      { stationName: '守谷', arrMin: 32, depMin: 33 },
-      { stationName: '土浦', arrMin: 48, depMin: 50 },
-      { stationName: '茨城空港', arrMin: 65, depMin: 66 },
-      { stationName: 'ひたちなか海浜公園', arrMin: 83, depMin: 84 },
-      { stationName: '大甕（おおみか）', arrMin: 95, depMin: 96 },
-      { stationName: '日立', arrMin: 108, depMin: 108 },
+      { stationName: '土浦', arrMin: 45, depMin: 47 },
+      { stationName: '高浜', arrMin: 59, depMin: 60 },
+      { stationName: '茨城空港', arrMin: 68, depMin: 68 },
     ],
   },
-  // 7. 1211列 通勤特快 (松戸 50分発 -> 土浦 88分着/90分発 -> 日立 140分後着)
+  // 7. 1211列 通勤特快 (松戸 50分発 -> 柏 -> 守谷 -> 森の里 -> 高浜 -> 茨城空港 106分後着)
   {
     trainNo: '1211列',
     trainName: '通勤特快',
     trainType: '通勤特快',
-    destination: '日立',
+    destination: '茨城空港',
     direction: 1,
     stops: [
       { stationName: '松戸', arrMin: 50, depMin: 50 },
       { stationName: '柏', arrMin: 58, depMin: 59 },
-      { stationName: '守谷', arrMin: 72, depMin: 73 },
-      { stationName: '土浦', arrMin: 88, depMin: 90 },
-      { stationName: 'ひたちなか海浜公園', arrMin: 120, depMin: 121 },
-      { stationName: '日立', arrMin: 140, depMin: 140 },
+      { stationName: '守谷', arrMin: 70, depMin: 71 },
+      { stationName: '森の里', arrMin: 80, depMin: 81 },
+      { stationName: '高浜', arrMin: 97, depMin: 98 },
+      { stationName: '茨城空港', arrMin: 106, depMin: 106 },
     ],
   },
 ];
 
 // 上り (日立・土浦 → 松戸方面) 対称パターン
 export const TSUCHIURA_UP_PATTERNS: TsuchiuraTrainPattern[] = [
-  // 1. 1202A 特急めぐり (日立 15分発 -> 松戸 103分後着)
+  // 1. 1202A 特急めぐり (日立 15分発 -> ひたちなか海浜公園 -> 土浦 -> 柏 -> 松戸 91分後着)
   {
     trainNo: '1202A',
     trainName: '特急めぐり',
@@ -168,12 +159,10 @@ export const TSUCHIURA_UP_PATTERNS: TsuchiuraTrainPattern[] = [
     direction: 2,
     stops: [
       { stationName: '日立', arrMin: 15, depMin: 15 },
-      { stationName: '大甕（おおみか）', arrMin: 27, depMin: 28 },
-      { stationName: 'ひたちなか海浜公園', arrMin: 39, depMin: 40 },
-      { stationName: '茨城空港', arrMin: 58, depMin: 59 },
-      { stationName: '土浦', arrMin: 72, depMin: 73 },
-      { stationName: '柏', arrMin: 96, depMin: 97 },
-      { stationName: '松戸', arrMin: 103, depMin: 103 },
+      { stationName: 'ひたちなか海浜公園', arrMin: 33, depMin: 34 },
+      { stationName: '土浦', arrMin: 60, depMin: 61 },
+      { stationName: '柏', arrMin: 84, depMin: 85 },
+      { stationName: '松戸', arrMin: 91, depMin: 91 },
     ],
   },
   // 2. 1204列 普通 (日立 00分発全駅フォロー -> 土浦 97分(37分)着 止まり)
@@ -200,7 +189,7 @@ export const TSUCHIURA_UP_PATTERNS: TsuchiuraTrainPattern[] = [
       { stationName: '土浦', arrMin: 97, depMin: 97 },
     ],
   },
-  // 3. 1206列 快速 (日立 30分発主要駅停車 -> 松戸 134分後着)
+  // 3. 1206列 快速 (日立 30分発主要駅停車 -> 松戸 128分後着)
   {
     trainNo: '1206列',
     trainName: '快速',
@@ -209,18 +198,16 @@ export const TSUCHIURA_UP_PATTERNS: TsuchiuraTrainPattern[] = [
     direction: 2,
     stops: [
       { stationName: '日立', arrMin: 30, depMin: 30 },
-      { stationName: '多賀', arrMin: 36, depMin: 37 },
-      { stationName: '大甕（おおみか）', arrMin: 42, depMin: 43 },
-      { stationName: 'ひたちなか海浜公園', arrMin: 53, depMin: 54 },
-      { stationName: '平磯', arrMin: 60, depMin: 61 },
-      { stationName: '大洗', arrMin: 67, depMin: 68 },
-      { stationName: '茨城空港', arrMin: 79, depMin: 80 },
-      { stationName: '高浜', arrMin: 87, depMin: 88 },
-      { stationName: '土浦', arrMin: 95, depMin: 96 },
-      { stationName: '荒川沖', arrMin: 103, depMin: 104 },
-      { stationName: '守谷', arrMin: 114, depMin: 115 },
-      { stationName: '柏', arrMin: 124, depMin: 125 },
-      { stationName: '松戸', arrMin: 134, depMin: 134 },
+      { stationName: 'ひたちなか海浜公園', arrMin: 48, depMin: 49 },
+      { stationName: '平磯', arrMin: 55, depMin: 56 },
+      { stationName: '茨城空港', arrMin: 67, depMin: 68 },
+      { stationName: '高浜', arrMin: 75, depMin: 76 },
+      { stationName: '土浦', arrMin: 83, depMin: 84 },
+      { stationName: '森の里', arrMin: 94, depMin: 95 },
+      { stationName: '谷井田', arrMin: 101, depMin: 102 },
+      { stationName: '守谷', arrMin: 108, depMin: 109 },
+      { stationName: '柏', arrMin: 118, depMin: 119 },
+      { stationName: '松戸', arrMin: 128, depMin: 128 },
     ],
   },
   // 4. 1208列 各停 (土浦 30分発 -> 松戸 93分後着)
@@ -242,7 +229,7 @@ export const TSUCHIURA_UP_PATTERNS: TsuchiuraTrainPattern[] = [
       { stationName: '松戸', arrMin: 93, depMin: 93 },
     ],
   },
-  // 5. 1210列 特別快速 (日立 10分発 -> 土浦 68分着/70分発 -> 松戸 108分後着)
+  // 5. 1210列 特別快速 (茨城空港 10分発 -> 高浜 -> 土浦 -> 柏 -> 松戸 69分後着)
   {
     trainNo: '1210列',
     trainName: '特別快速',
@@ -250,17 +237,14 @@ export const TSUCHIURA_UP_PATTERNS: TsuchiuraTrainPattern[] = [
     destination: '松戸',
     direction: 2,
     stops: [
-      { stationName: '日立', arrMin: 10, depMin: 10 },
-      { stationName: '大甕（おおみか）', arrMin: 22, depMin: 23 },
-      { stationName: 'ひたちなか海浜公園', arrMin: 34, depMin: 35 },
-      { stationName: '茨城空港', arrMin: 52, depMin: 53 },
-      { stationName: '土浦', arrMin: 68, depMin: 70 },
-      { stationName: '守谷', arrMin: 85, depMin: 86 },
-      { stationName: '柏', arrMin: 99, depMin: 100 },
-      { stationName: '松戸', arrMin: 108, depMin: 108 },
+      { stationName: '茨城空港', arrMin: 10, depMin: 10 },
+      { stationName: '高浜', arrMin: 18, depMin: 19 },
+      { stationName: '土浦', arrMin: 32, depMin: 34 },
+      { stationName: '柏', arrMin: 60, depMin: 61 },
+      { stationName: '松戸', arrMin: 69, depMin: 69 },
     ],
   },
-  // 6. 1212列 通勤特快 (日立 40分発 -> 土浦 90分着/92分発 -> 松戸 130分後着)
+  // 6. 1212列 通勤特快 (茨城空港 40分発 -> 高浜 -> 森の里 -> 守谷 -> 柏 -> 松戸 96分後着)
   {
     trainNo: '1212列',
     trainName: '通勤特快',
@@ -268,12 +252,12 @@ export const TSUCHIURA_UP_PATTERNS: TsuchiuraTrainPattern[] = [
     destination: '松戸',
     direction: 2,
     stops: [
-      { stationName: '日立', arrMin: 40, depMin: 40 },
-      { stationName: 'ひたちなか海浜公園', arrMin: 59, depMin: 60 },
-      { stationName: '土浦', arrMin: 90, depMin: 92 },
-      { stationName: '守谷', arrMin: 107, depMin: 108 },
-      { stationName: '柏', arrMin: 121, depMin: 122 },
-      { stationName: '松戸', arrMin: 130, depMin: 130 },
+      { stationName: '茨城空港', arrMin: 40, depMin: 40 },
+      { stationName: '高浜', arrMin: 48, depMin: 49 },
+      { stationName: '森の里', arrMin: 65, depMin: 66 },
+      { stationName: '守谷', arrMin: 75, depMin: 76 },
+      { stationName: '柏', arrMin: 87, depMin: 88 },
+      { stationName: '松戸', arrMin: 96, depMin: 96 },
     ],
   },
 ];

@@ -45,7 +45,7 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   // Station lists per express train
   const AYAMI_STATIONS = ['東京駅', '北千住駅', '松戸駅', '柏駅', '春日部駅', '大宮駅', '池袋駅', '新宿駅'];
   const NLINER_STATIONS = ['東京駅', '大宮駅', '調布駅', '溝の口駅', '新横浜駅', '横浜駅'];
-  const MEGURI_STATIONS = ['松戸駅', '柏駅', '守谷駅', '土浦駅', '茨城空港駅', 'ひたちなか海浜公園駅', '大甕（おおみか）駅', '日立駅'];
+  const MEGURI_STATIONS = ['松戸駅', '柏駅', '土浦駅', 'ひたちなか海浜公園駅', '日立駅'];
 
   // 各列車ごとの起点駅からの営業キロ（km）マップ
   const AYAMI_KM: Record<string, number> = {
@@ -71,11 +71,8 @@ export const ReservationTab: React.FC<ReservationTabProps> = ({
   const MEGURI_KM: Record<string, number> = {
     '松戸駅': 0.0,
     '柏駅': 11.5,
-    '守谷駅': 25.0,
     '土浦駅': 52.5,
-    '茨城空港駅': 78.0,
     'ひたちなか海浜公園駅': 111.0,
-    '大甕（おおみか）駅': 125.0,
     '日立駅': 138.0,
   };
 

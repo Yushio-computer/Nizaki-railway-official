@@ -17,8 +17,14 @@ import {
   Train,
   ShoppingBag,
   Clock,
+  Terminal,
+  KeyRound,
+  Wrench,
+  Bug,
+  ShieldAlert,
 } from 'lucide-react';
 import { MyStationRegisterCard, RegisterableStation } from './MyStationRegisterCard';
+import { AdminConsoleModal } from './AdminConsoleModal';
 import {
   isNotificationSupported,
   getNotificationPermissionState,
@@ -61,6 +67,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [notifyService, setNotifyService] = useState(true);
   const [permissionState, setPermissionState] = useState<string>('default');
   const [lastSentTime, setLastSentTime] = useState<string | null>(null);
+
+  // 4. Admin Console Modal State
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
 
   useEffect(() => {
     setPermissionState(getNotificationPermissionState());
@@ -490,11 +499,34 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </button>
       </div>
 
-      {/* App Version Info */}
+      {/* 管理者用設定・システム診断を開くボタン (落ち着いたデザイン) */}
+      <div className="pt-2">
+        <button
+          onClick={() => setIsAdminModalOpen(true)}
+          className="w-full py-2.5 px-3 bg-[#F6F5FA] hover:bg-[#EFE8FA] border border-[#E3DFED] hover:border-[#CBD5E1] text-[#475569] hover:text-[#1E293B] font-medium text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+        >
+          <KeyRound className="w-3.5 h-3.5 text-[#64748B]" />
+          <span>管理者用設定・システム診断（パスコード保護）</span>
+        </button>
+      </div>
+
+      {/* App Version Info (Clickable for Admin Mode) */}
       <div className="text-center pt-2 space-y-0.5">
-        <p className="text-[10px] font-bold text-[#6B6380]">神埼鉄道 NIIZAKI App v3.5.2</p>
+        <button
+          onClick={() => setIsAdminModalOpen(true)}
+          className="text-[10px] font-medium text-[#6B6380] hover:text-[#5B21B6] transition-colors cursor-pointer"
+          title="管理者コンソールを開く"
+        >
+          神埼鉄道 NIIZAKI App v3.7.0
+        </button>
         <p className="text-[9px] text-[#857D99]">© Nizaki Electric Railway Co., Ltd.</p>
       </div>
+
+      {/* 管理者用システムコンソールモーダル */}
+      <AdminConsoleModal
+        isOpen={isAdminModalOpen}
+        onClose={() => setIsAdminModalOpen(false)}
+      />
     </div>
   );
 };
