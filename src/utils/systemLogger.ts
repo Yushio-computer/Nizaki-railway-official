@@ -170,7 +170,7 @@ export const systemLogger = {
     systemLogger.addLog({
       level: 'info',
       source: 'SystemCore',
-      message: '神埼鉄道システム監視・緊急インシデント対策エンジン稼働 (v3.7.0)',
+      message: '神埼鉄道システム監視・緊急インシデント対策エンジン稼働 (v3.7.3)',
     });
   },
 
@@ -379,7 +379,7 @@ export const systemLogger = {
     }
 
     return {
-      appVersion: 'v3.7.0',
+      appVersion: 'v3.7.3',
       environment: process.env.NODE_ENV === 'production' ? 'Production' : 'Development',
       userAgent: ua,
       deviceType,

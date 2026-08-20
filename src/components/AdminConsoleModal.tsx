@@ -32,7 +32,7 @@ interface AdminConsoleModalProps {
   onRefreshAppState?: () => void;
 }
 
-const DEFAULT_PIN = '1925'; // 神埼鉄道 創業年
+const DEFAULT_PIN = '1925'; // 神埼鉄道 創業年 (初期値)
 const PIN_STORAGE_KEY = 'nizaki_admin_pin';
 const EMERGENCY_ALERT_KEY = 'nizaki_emergency_alert_manual';
 
@@ -67,15 +67,39 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   const [emergencyAlertActive, setEmergencyAlertActive] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
+  // Storage Confirmation Dialog State
+  const [showClearStorageConfirm, setShowClearStorageConfirm] = useState(false);
+
   // Selected storage key for inspection
   const [selectedStorageKey, setSelectedStorageKey] = useState<string | null>(null);
   const [storageDataView, setStorageDataView] = useState<string | null>(null);
 
-  // Load custom PIN & emergency alert state
+  // Handle modal close with auth reset
+  const handleClose = () => {
+    setIsAuthenticated(false);
+    setPinInput('');
+    setPinError(false);
+    setShowClearStorageConfirm(false);
+    onClose();
+  };
+
+  // Reset auth and load custom PIN & emergency alert state whenever modal opens/closes
   useEffect(() => {
+    // Always require re-authentication on every open
+    setIsAuthenticated(false);
+    setPinInput('');
+    setPinError(false);
+    setShowClearStorageConfirm(false);
+    setSelectedStorageKey(null);
+    setStorageDataView(null);
+
     try {
       const savedPin = localStorage.getItem(PIN_STORAGE_KEY);
-      if (savedPin) setCurrentPin(savedPin);
+      if (savedPin && savedPin.length === 4) {
+        setCurrentPin(savedPin);
+      } else {
+        setCurrentPin(DEFAULT_PIN);
+      }
 
       const savedAlert = localStorage.getItem(EMERGENCY_ALERT_KEY);
       if (savedAlert) {
@@ -85,7 +109,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     } catch {
       // Ignore
     }
-  }, []);
+  }, [isOpen]);
 
   // Subscribe to logs and fetch metrics
   useEffect(() => {
@@ -131,8 +155,9 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     setPinError(false);
   };
 
+  // Strictly verify against current active PIN only (no backdoors, no old PIN bypass)
   const verifyPin = (inputToTest: string) => {
-    if (inputToTest === currentPin || inputToTest === '7777' || inputToTest === DEFAULT_PIN) {
+    if (inputToTest === currentPin) {
       setIsAuthenticated(true);
       setPinInput('');
       setPinError(false);
@@ -158,7 +183,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       setPinChangeSuccess(true);
       setNewPinInput('');
       setTimeout(() => setPinChangeSuccess(false), 2500);
-      systemLogger.info('管理者パスコードが更新されました', 'AdminAuth');
+      systemLogger.info('管理者パスコードが更新されました（旧PINは無効化されました）', 'AdminAuth');
     }
   };
 
@@ -171,7 +196,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     }
     setPinChangeSuccess(true);
     setTimeout(() => setPinChangeSuccess(false), 2500);
-    systemLogger.info('管理者パスコードが初期値(1925)にリセットされました', 'AdminAuth');
+    systemLogger.info('管理者パスコードが初期値にリセットされました', 'AdminAuth');
   };
 
   // Emergency Actions
@@ -272,19 +297,19 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     }
   };
 
-  const handleClearAllStorage = () => {
-    if (confirm('警告: LocalStorageを全消去してアプリを初期状態に戻しますか？')) {
-      try {
-        localStorage.clear();
-        setMetrics(systemLogger.getMetrics());
-        setSelectedStorageKey(null);
-        setStorageDataView(null);
-        systemLogger.warn('管理者によりLocalStorage全初期化が実行されました', 'StorageInspector');
-        if (onRefreshAppState) onRefreshAppState();
-        alert('ストレージを初期化しました。');
-      } catch (e: any) {
-        systemLogger.error(`ストレージ初期化エラー: ${e.message}`, 'StorageInspector');
-      }
+  // Execute full storage clear after explicit confirmation
+  const executeClearAllStorage = () => {
+    try {
+      localStorage.clear();
+      setMetrics(systemLogger.getMetrics());
+      setSelectedStorageKey(null);
+      setStorageDataView(null);
+      systemLogger.warn('管理者によりLocalStorage全初期化が実行されました', 'StorageInspector');
+      if (onRefreshAppState) onRefreshAppState();
+      setActionNotice('LocalStorageの全データを初期化しました');
+      setTimeout(() => setActionNotice(null), 3500);
+    } catch (e: any) {
+      systemLogger.error(`ストレージ初期化エラー: ${e.message}`, 'StorageInspector');
     }
   };
 
@@ -311,7 +336,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     >
       <div
         id="admin-console-modal-card"
-        className="bg-[#1A1D24] border border-[#2D3342] rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-xl text-slate-200 overflow-hidden"
+        className="bg-[#1A1D24] border border-[#2D3342] rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-xl text-slate-200 overflow-hidden relative"
       >
         {/* Header - Calm Slate Header */}
         <div className="px-4 py-3 bg-[#212631] border-b border-[#2D3342] flex items-center justify-between shrink-0">
@@ -325,7 +350,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                   システム管理・緊急対策コンソール
                 </span>
                 <span className="px-1.5 py-0.2 bg-[#2D3342] text-slate-300 text-[10px] font-mono rounded">
-                  v3.7.0
+                  v3.7.3
                 </span>
               </div>
               <p className="text-[10px] text-slate-400">
@@ -337,7 +362,11 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
           <div className="flex items-center gap-1.5">
             {isAuthenticated && (
               <button
-                onClick={() => setIsAuthenticated(false)}
+                onClick={() => {
+                  setIsAuthenticated(false);
+                  setPinInput('');
+                  setPinError(false);
+                }}
                 className="px-2 py-1 bg-[#2D3342] hover:bg-[#384052] text-slate-300 hover:text-white rounded text-[10px] flex items-center gap-1 transition-colors cursor-pointer"
                 title="ログアウト"
               >
@@ -346,7 +375,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
               </button>
             )}
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="w-6 h-6 rounded-md bg-[#2D3342] hover:bg-[#384052] text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
               title="閉じる"
             >
@@ -366,7 +395,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
         {/* Modal Body */}
         {!isAuthenticated ? (
           /* ========================================================
-             1. Passcode Authentication Screen (Calm & Minimal)
+             1. Passcode Authentication Screen (Strict Verification)
              ======================================================== */
           <div className="p-6 flex flex-col items-center justify-center text-center space-y-4">
             <div className="w-11 h-11 rounded-xl bg-[#252B38] border border-[#333B4C] flex items-center justify-center text-slate-300">
@@ -420,13 +449,6 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                   {k}
                 </button>
               ))}
-            </div>
-
-            {/* Passcode Hint */}
-            <div className="pt-1">
-              <span className="inline-block px-2.5 py-0.5 bg-[#212631] border border-[#2D3342] rounded-md text-[10px] text-slate-400">
-                初期パスコード: <span className="font-mono text-slate-300 font-semibold">1925</span> または <span className="font-mono text-slate-300 font-semibold">7777</span>
-              </span>
             </div>
           </div>
         ) : (
@@ -898,7 +920,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
               )}
 
               {/* ========================================================
-                  TAB 4: Raw LocalStorage Inspector
+                  TAB 4: Raw LocalStorage Inspector & Safe Clearing
                   ======================================================== */}
               {activeTab === 'storage' && metrics && (
                 <div className="space-y-2.5">
@@ -911,7 +933,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                     </div>
 
                     <button
-                      onClick={handleClearAllStorage}
+                      onClick={() => setShowClearStorageConfirm(true)}
                       className="px-2 py-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-300 rounded text-[10px] flex items-center gap-1 cursor-pointer transition-colors"
                     >
                       <Trash2 className="w-3 h-3" />
@@ -982,8 +1004,8 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                       <KeyRound className="w-3.5 h-3.5 text-slate-400" />
                       <span>管理者パスコード変更</span>
                     </div>
-                    <p className="text-[11px] text-slate-400">
-                      4桁の数字で新しい管理者パスコードを設定できます。
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      4桁の数字で新しい管理者パスコードを設定できます。変更後は旧パスコードや初期パスコードでは解錠できなくなります。
                     </p>
 
                     <form onSubmit={handleChangePin} className="space-y-2 pt-0.5">
@@ -1008,23 +1030,65 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                       {pinChangeSuccess && (
                         <p className="text-[11px] text-emerald-400 flex items-center gap-1">
                           <CheckCircle2 className="w-3 h-3" />
-                          <span>パスコードを更新しました</span>
+                          <span>パスコードを更新しました（旧PINは無効化されました）</span>
                         </p>
                       )}
                     </form>
 
                     <div className="pt-2 border-t border-[#2D3342] flex justify-between items-center">
-                      <span className="text-[10px] text-slate-500">初期値に戻す</span>
+                      <span className="text-[10px] text-slate-500">パスコード初期化</span>
                       <button
                         onClick={handleResetPin}
                         className="px-2 py-1 bg-[#1A1D24] hover:bg-[#282F3E] text-slate-400 hover:text-slate-200 rounded text-[10px] transition-colors cursor-pointer"
                       >
-                        1925にリセット
+                        初期値にリセット
                       </button>
                     </div>
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================
+            3. Strict Storage Clear Confirmation Dialog
+            ======================================================== */}
+        {showClearStorageConfirm && (
+          <div className="absolute inset-0 z-30 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-[#1F232D] border border-rose-500/40 rounded-2xl max-w-sm w-full p-4 space-y-3 shadow-2xl text-slate-200">
+              <div className="flex items-center gap-2.5 text-rose-400">
+                <div className="w-8 h-8 rounded-lg bg-rose-500/15 border border-rose-500/30 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-4.5 h-4.5 text-rose-400" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-slate-100">本当に全データを削除しますか？</h4>
+                  <span className="text-[10px] text-rose-300 font-mono">警告: 復元不可</span>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-300 leading-relaxed bg-[#161820] p-2.5 rounded-lg border border-[#2D3342]">
+                この操作を実行すると、<strong>N-POINT残高、会員ランク、乗車履歴、保存したお気に入り、カスタム設定</strong>を含むLocalStorage上のすべての端末データが完全に削除され、アプリが初期状態に戻ります。
+              </p>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setShowClearStorageConfirm(false)}
+                  className="flex-1 py-2 bg-[#2D3342] hover:bg-[#384052] text-slate-300 rounded-lg text-xs font-medium transition-colors cursor-pointer"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={() => {
+                    setShowClearStorageConfirm(false);
+                    executeClearAllStorage();
+                  }}
+                  className="flex-1 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-center gap-1 shadow-md"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>完全に削除する</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
