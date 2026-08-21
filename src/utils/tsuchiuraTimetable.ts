@@ -1,4 +1,5 @@
 // 土浦線 (Tsuchiura Line) 日中ダイヤ構成 (土浦以北20分間隔パターン: 00分発各停全駅, 20分発快速, 40分発各停全駅 ※各停は土浦始発)
+import { disruptionManager } from './disruptionManager';
 
 export interface TimetableStop {
   stationName: string;
@@ -377,8 +378,16 @@ export function getTsuchiuraLiveTrains(
               const isBetween = !isStopStation || (stepRem >= 0.35 && stepRem <= 0.85);
 
               const trainSeed = Math.abs(Math.sin(targetHour * 100 + index * 17 + direction * 31)) * 10000;
-              // 全路線・上下線あわせても総合約1.5%〜2%程度の発生率 (1/300 ≒ 0.3%)
-              const delayMinutes = Math.floor(trainSeed) % 300 === 0 ? (Math.floor(trainSeed % 3) + 1) : 0;
+              const effectiveDelay = disruptionManager.getEffectiveDelayForTrain('tsuchiura', trainSeed, direction);
+              let delayMinutes = 0;
+              if (effectiveDelay.isSuspended) {
+                delayMinutes = 99;
+              } else if (effectiveDelay.delayMinutes > 0) {
+                delayMinutes = effectiveDelay.delayMinutes;
+              } else {
+                // 通常時の極微小遅延 (1/300 ≒ 0.3%)
+                delayMinutes = Math.floor(trainSeed) % 300 === 0 ? (Math.floor(trainSeed % 3) + 1) : 0;
+              }
 
               results.push({
                 id: `tc_${direction}_h${targetHour}_p${index}`,

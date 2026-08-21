@@ -2,12 +2,14 @@
 // Version 3.11.0 (Emergency Incident Response, Weather Forecast & Auto-Expiring Operation Alerts)
 
 export type DisruptionStatusType = 'normal' | 'delay' | 'suspended' | 'partially_suspended';
+export type DisruptionDirection = 'both' | 'up' | 'down';
 
 export interface LineDisruption {
   lineId: string; // 'kanzaki' | 'kanzaki_kosoku' | 'saichi' | 'tsuchiura'
   lineName: string; // '神埼線' | '神埼高速線' | '埼千環状線' | '土浦線'
   code: string; // 'Y' | 'NI' | 'SC' | 'TC'
   statusType: DisruptionStatusType;
+  targetDirection?: DisruptionDirection; // 'both' (上下線) | 'up' (上り線のみ) | 'down' (下り線のみ)
   maxDelayMinutes: number; // e.g. 15 (1〜15分の乱数遅延)
   durationUntil: string; // e.g. '18:30頃まで', '終日', '復旧見込み立たず'
   section: string; // e.g. '全線', '大宮〜横浜間', '松戸〜土浦間'
@@ -60,6 +62,7 @@ export interface DisruptionSummaryResponse {
     code: string;
     status: string;
     statusType: DisruptionStatusType;
+    targetDirection?: DisruptionDirection;
     delayMinutes: number;
     maxDelayMinutes: number;
     message: string;
@@ -381,7 +384,8 @@ export function generateDisruptionText(
   maxDelayMinutes: number,
   section: string,
   reason: string,
-  durationUntil: string
+  durationUntil: string,
+  targetDirection: DisruptionDirection = 'both'
 ): string {
   const now = new Date();
   const timeStr = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
@@ -390,13 +394,17 @@ export function generateDisruptionText(
   const cleanUntil = durationUntil.trim();
   const isWeather = isWeatherRelatedReason(cleanReason);
 
+  const directionLabel =
+    targetDirection === 'up' ? '上り線で' : targetDirection === 'down' ? '下り線で' : '上下線で';
+
   if (statusType === 'normal') {
     return '現在、全線でほぼ平常通り運転しております。';
   }
 
   // 運転見合わせ
   if (statusType === 'suspended') {
-    let msg = `${timeStr}現在、${lineName}は、${cleanSection}での${cleanReason}の影響により、全線で運転を見合わせております。`;
+    const scopeLabel = targetDirection === 'up' ? '上り線で' : targetDirection === 'down' ? '下り線で' : '全線で';
+    let msg = `${timeStr}現在、${lineName}は、${cleanSection}での${cleanReason}の影響により、${scopeLabel}運転を見合わせております。`;
     if (cleanUntil) {
       if (cleanUntil.includes('めど') || cleanUntil.includes('未定') || cleanUntil.includes('立っていません')) {
         msg += '（現時点で運転再開・復旧のめどは立っておりません）';
@@ -415,7 +423,7 @@ export function generateDisruptionText(
 
   // 一部運休
   if (statusType === 'partially_suspended') {
-    let msg = `${timeStr}現在、${lineName}は、${cleanReason}の影響により、${cleanSection}で一部列車の運転を取り止めております。`;
+    let msg = `${timeStr}現在、${lineName}は、${cleanReason}の影響により、${cleanSection}の${directionLabel}一部列車の運転を取り止めております。`;
     if (cleanUntil) {
       if (cleanUntil.includes('めど') || cleanUntil.includes('未定')) {
         msg += '（現時点で通常運行復帰のめどは立っておりません）';
@@ -432,7 +440,7 @@ export function generateDisruptionText(
 
   // statusType === 'delay' (列車遅延)
   const delayStr = maxDelayMinutes > 0 ? `最大約${maxDelayMinutes}分` : '一部';
-  let msg = `${timeStr}現在、${lineName}は、${cleanSection}での${cleanReason}の影響により、上下線で${delayStr}の遅れが発生しております。`;
+  let msg = `${timeStr}現在、${lineName}は、${cleanSection}での${cleanReason}の影響により、${directionLabel}${delayStr}の遅れが発生しております。`;
   if (cleanUntil) {
     if (cleanUntil.includes('めど') || cleanUntil.includes('未定') || cleanUntil.includes('立っていません')) {
       msg += '（天候・現場状況により、遅れの拡大や運転見合わせとなる可能性があります）';
@@ -583,21 +591,30 @@ export const disruptionManager = {
         hasDelay = true;
         const msg = d.useCustomMessage && d.customMessage.trim()
           ? d.customMessage.trim()
-          : generateDisruptionText(def.name, d.statusType, d.maxDelayMinutes, d.section, d.reason, d.durationUntil);
+          : generateDisruptionText(
+              def.name,
+              d.statusType,
+              d.maxDelayMinutes,
+              d.section,
+              d.reason,
+              d.durationUntil,
+              d.targetDirection || 'both'
+            );
 
         let statusText = '平常運転';
         let delayMinutes = 0;
+        const dirSuffix = d.targetDirection === 'up' ? ' (上り線)' : d.targetDirection === 'down' ? ' (下り線)' : '';
 
         if (d.statusType === 'suspended') {
-          statusText = '運転見合わせ';
-          delayedLineNames.push(`${def.name}(見合わせ)`);
+          statusText = `運転見合わせ${dirSuffix}`;
+          delayedLineNames.push(`${def.name}(見合わせ${dirSuffix})`);
         } else if (d.statusType === 'partially_suspended') {
-          statusText = '一部運休';
-          delayedLineNames.push(`${def.name}(一部運休)`);
+          statusText = `一部運休${dirSuffix}`;
+          delayedLineNames.push(`${def.name}(一部運休${dirSuffix})`);
         } else if (d.statusType === 'delay') {
-          statusText = d.maxDelayMinutes > 0 ? `遅延 (最大約${d.maxDelayMinutes}分)` : '一部遅延';
+          statusText = d.maxDelayMinutes > 0 ? `遅延 (最大約${d.maxDelayMinutes}分)${dirSuffix}` : `一部遅延${dirSuffix}`;
           delayMinutes = d.maxDelayMinutes;
-          delayedLineNames.push(`${def.name}(遅延)`);
+          delayedLineNames.push(`${def.name}(遅延${dirSuffix})`);
         }
 
         return {
@@ -606,6 +623,7 @@ export const disruptionManager = {
           code: def.code,
           status: statusText,
           statusType: d.statusType,
+          targetDirection: d.targetDirection || 'both',
           delayMinutes,
           maxDelayMinutes: d.maxDelayMinutes,
           message: msg,
@@ -623,6 +641,7 @@ export const disruptionManager = {
         code: def.code,
         status: '平常運転',
         statusType: 'normal' as DisruptionStatusType,
+        targetDirection: 'both' as DisruptionDirection,
         delayMinutes: 0,
         maxDelayMinutes: 0,
         message: '現在、全線でほぼ平常通り運転しております。',
@@ -767,12 +786,32 @@ export const disruptionManager = {
    * 列車ごとの実効遅延分数（1〜maxDelayMinutesの乱数）を算出
    * @param lineId 路線ID ('kanzaki', 'kanzaki_kosoku', 'saichi'/'saichi_loop', 'tsuchiura')
    * @param trainSeed 列車IDまたはタイムスタンプ等のシード
+   * @param direction 進行方向 (1 = 下り, 2 = 上り, 'down' | 'up' | 'both')
    * @returns delayMinutes (0なら平常、>0なら遅れ、-1なら運休)
    */
-  getEffectiveDelayForTrain: (lineId: string, trainSeed: string | number = 'train_default'): { delayMinutes: number; isSuspended: boolean } => {
+  getEffectiveDelayForTrain: (
+    lineId: string,
+    trainSeed: string | number = 'train_default',
+    direction?: 1 | 2 | 'up' | 'down' | 'both'
+  ): { delayMinutes: number; isSuspended: boolean } => {
     const d = disruptionManager.getLineDisruption(lineId);
     if (!d || d.statusType === 'normal' || !d.linkToSystem) {
       return { delayMinutes: 0, isSuspended: false };
+    }
+
+    // 方向チェック: 上り線のみ / 下り線のみ の遅延設定がある場合
+    if (d.targetDirection && d.targetDirection !== 'both' && direction !== undefined) {
+      const isUpTrain = direction === 2 || direction === 'up';
+      const isDownTrain = direction === 1 || direction === 'down';
+
+      if (d.targetDirection === 'up' && !isUpTrain) {
+        // 上り線のみの遅延指定で、対象が上り列車でない場合（下り列車）は平常運転
+        return { delayMinutes: 0, isSuspended: false };
+      }
+      if (d.targetDirection === 'down' && !isDownTrain) {
+        // 下り線のみの遅延指定で、対象が下り列車でない場合（上り列車）は平常運転
+        return { delayMinutes: 0, isSuspended: false };
+      }
     }
 
     if (d.statusType === 'suspended') {

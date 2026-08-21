@@ -39,6 +39,7 @@ import {
   disruptionManager,
   LineDisruption,
   DisruptionStatusType,
+  DisruptionDirection,
   DEFAULT_LINE_INFOS,
   COMMON_REASONS,
   COMMON_REASON_CATEGORIES,
@@ -83,6 +84,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   // Disruption Dispatcher State
   const [selectedLineId, setSelectedLineId] = useState<string>('kanzaki');
   const [disruptionStatusType, setDisruptionStatusType] = useState<DisruptionStatusType>('delay');
+  const [targetDirection, setTargetDirection] = useState<DisruptionDirection>('both');
   const [maxDelayMinutes, setMaxDelayMinutes] = useState<number>(15);
   const [durationUntil, setDurationUntil] = useState<string>('18:30頃まで');
   const [section, setSection] = useState<string>('全線');
@@ -140,6 +142,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     const existing = disruptionManager.getLineDisruption(lineId);
     if (existing) {
       setDisruptionStatusType(existing.statusType);
+      setTargetDirection(existing.targetDirection || 'both');
       setMaxDelayMinutes(existing.maxDelayMinutes || 15);
       setDurationUntil(existing.durationUntil || '');
       const existingSec = existing.section || '全線';
@@ -156,10 +159,12 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
         setToStation(defaultTo);
       } else if (existingSec === '上り線のみ') {
         setSectionMode('direction_up');
+        setTargetDirection('up');
         setFromStation(defaultFrom);
         setToStation(defaultTo);
       } else if (existingSec === '下り線のみ') {
         setSectionMode('direction_down');
+        setTargetDirection('down');
         setFromStation(defaultFrom);
         setToStation(defaultTo);
       } else if (existingSec.includes('〜')) {
@@ -179,6 +184,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       }
     } else {
       setDisruptionStatusType('delay');
+      setTargetDirection('both');
       setMaxDelayMinutes(15);
       setDurationUntil('18:30頃まで');
       setSection('全線');
@@ -225,8 +231,10 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       setSection(`${fromStation} 〜 ${toStation} 間`);
     } else if (mode === 'direction_up') {
       setSection('上り線のみ');
+      setTargetDirection('up');
     } else if (mode === 'direction_down') {
       setSection('下り線のみ');
+      setTargetDirection('down');
     }
   };
 
@@ -342,7 +350,8 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       maxDelayMinutes,
       section,
       reason,
-      durationUntil
+      durationUntil,
+      targetDirection
     );
 
     const disruptionData: LineDisruption = {
@@ -350,6 +359,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       lineName: lineDef.name,
       code: lineDef.code,
       statusType: disruptionStatusType,
+      targetDirection,
       maxDelayMinutes: Number(maxDelayMinutes) || 0,
       durationUntil: durationUntil.trim(),
       section: section.trim() || '全線',
@@ -362,13 +372,14 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
 
     disruptionManager.setLineDisruption(disruptionData);
     setActiveDisruptionsMap(disruptionManager.getAllDisruptions());
+    const dirLabel = targetDirection === 'up' ? ' [上り線のみ]' : targetDirection === 'down' ? ' [下り線のみ]' : ' [上下線]';
     systemLogger.info(
-      `[運行指令発令] ${lineDef.name} (${lineDef.code}): ${
+      `[運行指令発令] ${lineDef.name} (${lineDef.code})${dirLabel}: ${
         disruptionStatusType === 'delay' ? `遅延(最大約${maxDelayMinutes}分)` : disruptionStatusType
       } / 連動=${linkToSystem}`,
       'DisruptionDispatcher'
     );
-    setActionNotice(`【運行指令発令】${lineDef.name} の運行情報・遅延を更新・反映しました`);
+    setActionNotice(`【運行指令発令】${lineDef.name}${dirLabel} の運行情報・遅延を更新・反映しました`);
     setTimeout(() => setActionNotice(null), 3500);
     if (onRefreshAppState) onRefreshAppState();
   };
@@ -684,7 +695,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                   神埼鉄道 管理者指令コンソール
                 </span>
                 <span className="px-1.5 py-0.5 bg-slate-700 text-slate-300 text-[10px] font-mono font-bold rounded">
-                  v3.11.0
+                  v3.12.0
                 </span>
               </div>
               <p className="text-[10px] text-slate-400">
@@ -906,7 +917,8 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                   maxDelayMinutes,
                   section,
                   reason,
-                  durationUntil
+                  durationUntil,
+                  targetDirection
                 );
 
                 return (
@@ -1130,6 +1142,55 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                             </div>
                           </div>
                         )}
+
+                        {/* ========================================================
+                            TARGET DIRECTION SELECTION (上下線 / 上り線のみ / 下り線のみ)
+                            ======================================================== */}
+                        <div className="space-y-2 bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/80">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-slate-200 font-semibold flex items-center gap-1.5">
+                              <ArrowLeftRight className="w-3.5 h-3.5 text-amber-400" />
+                              <span>対象方向（上下線 / 上り / 下り個別設定）</span>
+                            </span>
+                            <span className="text-[10px] font-bold text-amber-300">
+                              {targetDirection === 'both' ? '🔄 上下線ともに適用' : targetDirection === 'up' ? '⬆️ 上り線のみ遅延' : '⬇️ 下り線のみ遅延'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {[
+                              { dir: 'both' as DisruptionDirection, label: '上下線 (両方向)', desc: '上下全列車に適用' },
+                              { dir: 'up' as DisruptionDirection, label: '上り線 のみ', desc: '上り列車のみ遅延' },
+                              { dir: 'down' as DisruptionDirection, label: '下り線 のみ', desc: '下り列車のみ遅延' },
+                            ].map((item) => (
+                              <button
+                                key={item.dir}
+                                type="button"
+                                onClick={() => {
+                                  setTargetDirection(item.dir);
+                                  if (item.dir === 'up') {
+                                    setSectionMode('direction_up');
+                                    setSection('上り線のみ');
+                                  } else if (item.dir === 'down') {
+                                    setSectionMode('direction_down');
+                                    setSection('下り線のみ');
+                                  } else if (section === '上り線のみ' || section === '下り線のみ') {
+                                    setSectionMode('all');
+                                    setSection('全線');
+                                  }
+                                }}
+                                className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                                  targetDirection === item.dir
+                                    ? 'bg-indigo-600/30 border-indigo-400 text-indigo-100 font-bold shadow-xs'
+                                    : 'bg-slate-900/80 border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-750'
+                                }`}
+                              >
+                                <div className="text-[11px] font-bold">{item.label}</div>
+                                <div className="text-[9px] opacity-75">{item.desc}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
 
                         {/* ========================================================
                             FLEXIBLE IMPACT SECTION SETTING (Express Ticket Dropdown Style)

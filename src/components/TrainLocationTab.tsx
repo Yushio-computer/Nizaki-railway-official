@@ -549,7 +549,7 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
       const trainType = config.trainTypes[Math.floor(seed) % config.trainTypes.length];
       
       // 管理者運行指令による実効遅延（1〜最大遅延分の乱数）または通常時の微小遅延
-      const effectiveDelay = disruptionManager.getEffectiveDelayForTrain(activeLineId, trainStartTime);
+      const effectiveDelay = disruptionManager.getEffectiveDelayForTrain(activeLineId, trainStartTime, direction);
       let delayMinutes = 0;
       if (effectiveDelay.isSuspended) {
         delayMinutes = 99; // 運転見合わせフラグ
@@ -689,29 +689,47 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
 
   const lineTrains = computeLiveTrains();
 
+  // 優等度ランク計算（特急/めぐり/スカイ > 通勤特快/特別快速 > 快速/急行 > 準急/区間快速 > 各停/普通）
+  const getTrainRank = (trainType: string): number => {
+    if (trainType.includes('特急') || trainType.includes('めぐり') || trainType.includes('スカイ') || trainType.includes('ライナー')) return 10;
+    if (trainType.includes('通勤特快') || trainType.includes('特別快速') || trainType.includes('特快') || trainType.includes('快特')) return 8;
+    if (trainType.includes('通勤快速') || trainType.includes('快速') || trainType.includes('急行')) return 5;
+    if (trainType.includes('準急') || trainType.includes('区間快速')) return 4;
+    return 1; // 各駅停車・普通
+  };
+
   // Train Icon on Left side of line (Matching attached images with Direction Arrow & Delay +X)
-  const renderLeftTrainIcon = (train: LiveTrainPos, index: number = 0, total: number = 1) => {
+  // 被り時は優等種別が左側、下等種別が右側に避ける左右構成（画面外はみ出し防止マージン制御）
+  const renderLeftTrainIcon = (
+    train: LiveTrainPos,
+    index: number = 0,
+    total: number = 1,
+    isExpressRank: boolean = false
+  ) => {
     const style = getTrainTypeBadgeStyle(train.trainType);
     const arrowColor = style.arrowColor;
 
     const isSelected = selectedTrain?.id === train.id;
     const isDown = train.direction === 1; // 1 = Traveling downwards, 2 = Traveling upwards
 
-    // 優等列車の判定（特急めぐり、特別快速、通勤特快、ライナーなど）
     const isExpress =
       train.trainType.includes('特急') ||
       train.trainType.includes('特別快速') ||
       train.trainType.includes('通勤特快') ||
       train.trainType.includes('ライナー');
 
-    // 複数列車が同じ駅・駅間に存在する場合の左側位置計算
-    // 通常の列車（各停等）は-64px（駅の丸印 -31px と重ならない十分な間隔）、通過・追い抜きを行う優等列車はさらに左横（-96px）に移動して設置
-    let leftOffset = 64;
+    // 複数列車が同じ駅・駅間に存在する場合の左右位置オフセット計算:
+    // 【ユーザー要望対応】全列車が線路（X = -24px）を跨がず、線路の左側に完全に配置
+    // 重複時は優等種別が左側（中心 -65px）、下等種別が右側（中心 -43px）に避ける
+    // 単独時は中心 -50px（線路の左 26px）で線路から十分離れた位置に配置
+    let centerPos = -50;
     if (total > 1) {
-      if (isExpress) {
-        leftOffset = 96; // 通過・追い抜きの優等列車は左横の追越線位置へ
-      } else if (index > 0) {
-        leftOffset = 64 + index * 32;
+      if (isExpressRank || (total === 2 && index === 0)) {
+        // 優等種別（または先頭優等）: 左側に避ける (追越線側)
+        centerPos = -65;
+      } else {
+        // 下等種別（普通・各停等）: 右側に避ける (本線・待避線側、線路 -24px の手前 7px 離れる)
+        centerPos = -43;
       }
     }
 
@@ -722,13 +740,13 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
           e.stopPropagation();
           setSelectedTrain(isSelected ? null : train);
         }}
-        style={{ left: `-${leftOffset}px` }}
-        className={`absolute top-1/2 -translate-y-1/2 z-20 flex flex-col items-center cursor-pointer transition-all ${
+        style={{ left: `${centerPos}px` }}
+        className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 flex flex-col items-center cursor-pointer transition-all ${
           isSelected ? 'scale-115 ring-2 ring-[#5B21B6] rounded-xl p-0.5 bg-purple-50/80 shadow-md z-30' : 'hover:scale-105'
         }`}
         title={`${train.trainType} ${train.destination}行 (${train.delayMinutes > 0 ? `+${train.delayMinutes}分遅れ` : '定時'})`}
       >
-        {/* 通過・退避表示バッジ (同一駅に複数列車があり優等列車の場合) */}
+        {/* 通過・優等バッジ (同一駅に複数列車があり優等列車の場合) */}
         {total > 1 && isExpress && (
           <span className="text-[9px] font-black text-purple-700 bg-purple-100 px-1 py-0.2 rounded border border-purple-300 leading-none mb-0.5 whitespace-nowrap shadow-2xs">
             通過
@@ -808,7 +826,7 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
     );
   };
 
-  // 複数列車時の右側種別・行先バッジ群レンダラー（重ならずに表示）
+  // 複数列車時の右側種別・行先バッジ群レンダラー（優等種別を上段、下等種別を下段に並べて表示）
   const renderTrainBadgesGroup = (trains: LiveTrainPos[]) => {
     if (trains.length === 0) return null;
     if (trains.length === 1) {
@@ -820,10 +838,12 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
     }
 
     // 同一駅・駅間に複数列車が存在する場合（退避待避・追越発生時など）
-    // 重ならないように縦・横に段差を設けて並べて表示
+    // 優等種別を上位、普通種別を下位として整列
+    const sortedTrains = [...trains].sort((a, b) => getTrainRank(b.trainType) - getTrainRank(a.trainType));
+
     return (
       <div className="absolute right-0 top-1/2 -translate-y-1/2 z-20 flex flex-col items-end gap-1">
-        {trains.map((train) => (
+        {sortedTrains.map((train) => (
           <div key={train.id} className="flex items-center gap-1">
             {renderTrainBadge(train)}
           </div>
@@ -938,15 +958,22 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
 
       {/* Main Realtime Railway Map Schematic */}
       <div className="p-4 relative">
-        <div className="relative border-l-2 border-[#D1C9E3] ml-16 pl-6 space-y-7 my-2">
+        <div className="relative border-l-2 border-[#D1C9E3] ml-20 pl-6 space-y-7 my-2">
           {displayStations.map((st, idx) => {
-            // Find all trains at this station
-            const trainsAtStation = liveTrains.filter(
+            // Find all trains at this station (sorted by express rank so express stays on left, local stays on right)
+            const rawTrainsAtStation = liveTrains.filter(
               (t) => t.stationId === st.id && !t.isBetween
             );
-            // Find all trains between this station and next
-            const trainsBetween = liveTrains.filter(
+            const trainsAtStation = [...rawTrainsAtStation].sort(
+              (a, b) => getTrainRank(b.trainType) - getTrainRank(a.trainType)
+            );
+
+            // Find all trains between this station and next (sorted by express rank)
+            const rawTrainsBetween = liveTrains.filter(
               (t) => t.stationId === st.id && t.isBetween
+            );
+            const trainsBetween = [...rawTrainsBetween].sort(
+              (a, b) => getTrainRank(b.trainType) - getTrainRank(a.trainType)
             );
 
             const hasMultipleStation = trainsAtStation.length > 1;
@@ -965,7 +992,7 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
 
                   {/* LEFT SIDE: Train Icons with directional triangle & delay indicator */}
                   {trainsAtStation.map((train, tIdx) =>
-                    renderLeftTrainIcon(train, tIdx, trainsAtStation.length)
+                    renderLeftTrainIcon(train, tIdx, trainsAtStation.length, tIdx === 0 && trainsAtStation.length > 1)
                   )}
 
                   {/* Left Station Info (Station Name + Sub-row for Transfers) */}
@@ -1020,7 +1047,7 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
                   >
                     {/* LEFT SIDE: Train Icons between stations */}
                     {trainsBetween.map((train, tIdx) =>
-                      renderLeftTrainIcon(train, tIdx, trainsBetween.length)
+                      renderLeftTrainIcon(train, tIdx, trainsBetween.length, tIdx === 0 && trainsBetween.length > 1)
                     )}
 
                     {/* Right Side: Train Destination Badges Group */}
