@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronRight, ChevronDown, ChevronUp, Info, HelpCircle, AlertCircle, ArrowLeftRight, X, Clock, RotateCcw } from 'lucide-react';
+import { ChevronRight, ChevronDown, ChevronUp, Info, HelpCircle, AlertCircle, ArrowLeftRight, X, Clock, RotateCcw, CheckCircle2 } from 'lucide-react';
 import { getTsuchiuraLiveTrains } from '../utils/tsuchiuraTimetable';
 import { LocationStationDetailCard, LocationStationInfo } from './LocationStationDetailCard';
 import { sendLocalPushNotification } from '../utils/pushNotification';
@@ -22,7 +22,9 @@ export interface DisplayLine {
   stations: StationNode[];
 }
 
-interface TrainLocationTabProps {}
+interface TrainLocationTabProps {
+  onOpenTimetable?: (stationName?: string, direction?: 1 | 2) => void;
+}
 
 export interface LiveTrainPos {
   id: string;
@@ -331,7 +333,9 @@ const MOCK_TRAINS: LiveTrainPos[] = [
   },
 ];
 
-export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
+export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({
+  onOpenTimetable,
+}) => {
   const [activeLineId, setActiveLineId] = useState<string>('kanzaki');
   const [direction, setDirection] = useState<1 | 2>(1); // 1=下り/方向1, 2=上り/方向2
   const [selectedTrain, setSelectedTrain] = useState<LiveTrainPos | null>(null);
@@ -379,13 +383,13 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
 
           // 1. Web Push Notification 送信
           sendLocalPushNotification({
-            title: `⚠️ 【列車遅延発生】${lineName}`,
+            title: `【列車遅延発生】${lineName}`,
             body: notificationMsg,
             tag: `delay-${train.id}`,
           });
 
           // 2. アプリ内トースト通知バナー表示
-          setLatestDelayNotice(`⚠️ ${lineName}：${train.trainType}（${train.destination}行）で約 ${train.delayMinutes}分遅れが発生中`);
+          setLatestDelayNotice(`${lineName}：${train.trainType}（${train.destination}行）で約 ${train.delayMinutes}分遅れが発生中`);
 
           // 1回のタイマーサイクルで送信するのは1通のみ
           break;
@@ -703,8 +707,7 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
   const renderLeftTrainIcon = (
     train: LiveTrainPos,
     index: number = 0,
-    total: number = 1,
-    isExpressRank: boolean = false
+    total: number = 1
   ) => {
     const style = getTrainTypeBadgeStyle(train.trainType);
     const arrowColor = style.arrowColor;
@@ -712,25 +715,21 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
     const isSelected = selectedTrain?.id === train.id;
     const isDown = train.direction === 1; // 1 = Traveling downwards, 2 = Traveling upwards
 
-    const isExpress =
-      train.trainType.includes('特急') ||
-      train.trainType.includes('特別快速') ||
-      train.trainType.includes('通勤特快') ||
-      train.trainType.includes('ライナー');
-
     // 複数列車が同じ駅・駅間に存在する場合の左右位置オフセット計算:
-    // 【ユーザー要望対応】全列車が線路（X = -24px）を跨がず、線路の左側に完全に配置
-    // 重複時は優等種別が左側（中心 -65px）、下等種別が右側（中心 -43px）に避ける
-    // 単独時は中心 -50px（線路の左 26px）で線路から十分離れた位置に配置
-    let centerPos = -50;
-    if (total > 1) {
-      if (isExpressRank || (total === 2 && index === 0)) {
-        // 優等種別（または先頭優等）: 左側に避ける (追越線側)
-        centerPos = -65;
-      } else {
-        // 下等種別（普通・各停等）: 右側に避ける (本線・待避線側、線路 -24px の手前 7px 離れる)
-        centerPos = -43;
-      }
+    // 【重要】全列車が線路（X = -24px）および駅ノード（-31px）を絶対に跨がず、
+    // かつ複数編成が重なり合って隠れてしまわない（大事故・衝突防止）よう、各列車を整然と横並びに配置。
+    // 線路のX座標: -24px / 駅ノード: -31px
+    // 列車アイコン右端が -36px より左にあれば線路・ノードを跨がない。
+    let centerPos = -62;
+    if (total === 2) {
+      // 2編成時: 優等種別(左) -86px, 下等種別(右) -56px (幅30px差)
+      centerPos = index === 0 ? -86 : -56;
+    } else if (total === 3) {
+      // 3編成時: 最優等(左) -104px, 中間(中) -80px, 最下等(右) -56px (幅24px差)
+      centerPos = index === 0 ? -104 : index === 1 ? -80 : -56;
+    } else if (total > 3) {
+      // 4編成以上時: 動的均等配置 (最右 -56px、左へ24px刻み)
+      centerPos = -56 - (total - 1 - index) * 24;
     }
 
     return (
@@ -746,8 +745,8 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
         }`}
         title={`${train.trainType} ${train.destination}行 (${train.delayMinutes > 0 ? `+${train.delayMinutes}分遅れ` : '定時'})`}
       >
-        {/* 通過・優等バッジ (同一駅に複数列車があり優等列車の場合) */}
-        {total > 1 && isExpress && (
+        {/* 通過バッジ: 停車駅ではない駅に位置している場合（isStopStation === false）のみ表示 */}
+        {train.isStopStation === false && (
           <span className="text-[9px] font-black text-purple-700 bg-purple-100 px-1 py-0.2 rounded border border-purple-300 leading-none mb-0.5 whitespace-nowrap shadow-2xs">
             通過
           </span>
@@ -874,7 +873,8 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
         {/* Reset Notice Banner */}
         {showResetNotice && (
           <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-bold px-3 py-1.5 text-center animate-fade-in flex items-center justify-center gap-1.5">
-            <span>✓ 走行位置をリセットし、現在時刻に再設置しました</span>
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>走行位置をリセットし、現在時刻に再設置しました</span>
           </div>
         )}
 
@@ -923,42 +923,56 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
           })}
         </div>
 
-        {/* 2. Direction Switcher Segment Switch (パープルの丸みのあるスイッチ) */}
-        <div className="p-3 bg-[#F4F3F8]">
-          <div className="bg-[#E6E2EE]/60 p-1 rounded-xl flex items-center gap-1">
-            <button
-              onClick={() => {
-                setDirection(1);
-                setSelectedTrain(null);
-              }}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer text-center ${
-                direction === 1
-                  ? 'bg-[#5B21B6] text-white shadow-xs'
-                  : 'text-[#6B6380] hover:text-[#221C35]'
-              }`}
-            >
-              {activeLine.direction1}
-            </button>
-            <button
-              onClick={() => {
-                setDirection(2);
-                setSelectedTrain(null);
-              }}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer text-center ${
-                direction === 2
-                  ? 'bg-[#5B21B6] text-white shadow-xs'
-                  : 'text-[#6B6380] hover:text-[#221C35]'
-              }`}
-            >
-              {activeLine.direction2}
-            </button>
+        {/* 2. Direction Switcher Segment Switch & Timetable Action */}
+        <div className="p-3 bg-[#F4F3F8] space-y-2">
+          <div className="flex items-center gap-2">
+            <div className="bg-[#E6E2EE]/60 p-1 rounded-xl flex items-center gap-1 flex-1">
+              <button
+                onClick={() => {
+                  setDirection(1);
+                  setSelectedTrain(null);
+                }}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer text-center ${
+                  direction === 1
+                    ? 'bg-[#5B21B6] text-white shadow-xs'
+                    : 'text-[#6B6380] hover:text-[#221C35]'
+                }`}
+              >
+                {activeLine.direction1}
+              </button>
+              <button
+                onClick={() => {
+                  setDirection(2);
+                  setSelectedTrain(null);
+                }}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer text-center ${
+                  direction === 2
+                    ? 'bg-[#5B21B6] text-white shadow-xs'
+                    : 'text-[#6B6380] hover:text-[#221C35]'
+                }`}
+              >
+                {activeLine.direction2}
+              </button>
+            </div>
+
+            {onOpenTimetable && (
+              <button
+                type="button"
+                onClick={() => onOpenTimetable(activeLineId === 'tsuchiura' ? '松戸' : undefined, direction)}
+                className="px-3 py-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-[#5B21B6] text-xs font-bold rounded-xl flex items-center gap-1.5 shrink-0 transition-all cursor-pointer shadow-2xs active:scale-95"
+                title="土浦線 駅時刻表を開く"
+              >
+                <Clock className="w-3.5 h-3.5 text-[#5B21B6]" />
+                <span className="hidden xs:inline">駅時刻表</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       {/* Main Realtime Railway Map Schematic */}
       <div className="p-4 relative">
-        <div className="relative border-l-2 border-[#D1C9E3] ml-20 pl-6 space-y-7 my-2">
+        <div className="relative border-l-2 border-[#D1C9E3] ml-32 pl-6 space-y-7 my-2">
           {displayStations.map((st, idx) => {
             // Find all trains at this station (sorted by express rank so express stays on left, local stays on right)
             const rawTrainsAtStation = liveTrains.filter(
@@ -992,7 +1006,7 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
 
                   {/* LEFT SIDE: Train Icons with directional triangle & delay indicator */}
                   {trainsAtStation.map((train, tIdx) =>
-                    renderLeftTrainIcon(train, tIdx, trainsAtStation.length, tIdx === 0 && trainsAtStation.length > 1)
+                    renderLeftTrainIcon(train, tIdx, trainsAtStation.length)
                   )}
 
                   {/* Left Station Info (Station Name + Sub-row for Transfers) */}
@@ -1047,7 +1061,7 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
                   >
                     {/* LEFT SIDE: Train Icons between stations */}
                     {trainsBetween.map((train, tIdx) =>
-                      renderLeftTrainIcon(train, tIdx, trainsBetween.length, tIdx === 0 && trainsBetween.length > 1)
+                      renderLeftTrainIcon(train, tIdx, trainsBetween.length)
                     )}
 
                     {/* Right Side: Train Destination Badges Group */}
@@ -1075,6 +1089,7 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
 
           <LocationStationDetailCard
             stationInfo={selectedStation}
+            onOpenTimetable={(stName) => onOpenTimetable?.(stName, direction)}
           />
         </div>
       )}

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ArrowRightLeft, MapPin, Train, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowRightLeft, MapPin, Train, ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import { TIMETABLE_AVAILABLE_STATIONS } from '../data/tsuchiuraStationTimetableData';
 
 export interface LocationStationInfo {
   name: string;
@@ -9,6 +10,7 @@ export interface LocationStationInfo {
 
 interface LocationStationDetailCardProps {
   stationInfo: LocationStationInfo;
+  onOpenTimetable?: (stationName: string) => void;
 }
 
 // 社内線（当社線）データ構造
@@ -291,9 +293,15 @@ const OTHER_LINES_DATABASE: Record<string, OtherLineInfo[]> = {
 
 export const LocationStationDetailCard: React.FC<LocationStationDetailCardProps> = ({
   stationInfo,
+  onOpenTimetable,
 }) => {
   const [isOpen, setIsOpen] = useState<boolean>(true);
   const name = stationInfo.name;
+
+  // この駅が土浦線対応駅（松戸、柏、土浦、茨城空港、日立 等）かどうか
+  const isTimetableStation = TIMETABLE_AVAILABLE_STATIONS.some(
+    (s) => name.includes(s.name) || s.name.includes(name)
+  );
 
   // 当社線（社内乗り換え）リストの抽出
   const companyLines: CompanyLineInfo[] = [];
@@ -337,6 +345,32 @@ export const LocationStationDetailCard: React.FC<LocationStationDetailCardProps>
 
   return (
     <div className="bg-white rounded-xl border border-[#E2DFE8] p-3 space-y-2.5 shadow-2xs relative overflow-hidden transition-all">
+      {/* Station Timetable Quick Action Bar (if available) */}
+      {onOpenTimetable && (
+        <div className="flex items-center justify-between gap-2 bg-purple-50/80 p-2 rounded-lg border border-purple-200">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Clock className="w-4 h-4 text-[#5B21B6] shrink-0" />
+            <div className="truncate">
+              <span className="text-[11px] font-bold text-[#5B21B6]">
+                {name}駅 時刻表
+              </span>
+              {isTimetableStation && (
+                <span className="ml-1.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-[#5B21B6] text-white">
+                  土浦線 公式ダイヤ
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onOpenTimetable(name)}
+            className="px-2.5 py-1 rounded-md text-[11px] font-bold text-white bg-[#5B21B6] hover:bg-[#4C1D95] transition-all cursor-pointer shrink-0 shadow-xs active:scale-95"
+          >
+            時刻表を見る
+          </button>
+        </div>
+      )}
+
       {/* Top Header Banner - Pull-down Accordion Toggle */}
       <button
         type="button"

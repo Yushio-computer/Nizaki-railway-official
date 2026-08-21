@@ -695,7 +695,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                   神埼鉄道 管理者指令コンソール
                 </span>
                 <span className="px-1.5 py-0.5 bg-slate-700 text-slate-300 text-[10px] font-mono font-bold rounded">
-                  v3.12.0
+                  v3.12.3
                 </span>
               </div>
               <p className="text-[10px] text-slate-400">
@@ -1012,7 +1012,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                               <div className="mt-1.5">
                                 <span className="font-bold text-[11px] block truncate">{line.name}</span>
                                 <span className="text-[9px] text-slate-400 block truncate">
-                                  {hasDisruption ? '⚠️ 運行支障あり' : '平常運転'}
+                                  {hasDisruption ? '運行支障あり' : '平常運転'}
                                 </span>
                               </div>
                             </button>
@@ -1153,7 +1153,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                               <span>対象方向（上下線 / 上り / 下り個別設定）</span>
                             </span>
                             <span className="text-[10px] font-bold text-amber-300">
-                              {targetDirection === 'both' ? '🔄 上下線ともに適用' : targetDirection === 'up' ? '⬆️ 上り線のみ遅延' : '⬇️ 下り線のみ遅延'}
+                              {targetDirection === 'both' ? '上下線ともに適用' : targetDirection === 'up' ? '上り線のみ遅延' : '下り線のみ遅延'}
                             </span>
                           </div>
 
@@ -1350,7 +1350,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                             </span>
                             {isWeatherRelatedReason(reason) && (
                               <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[9px] font-bold flex items-center gap-1">
-                                <span>🌧️ 気象・自然要因（天候回復待ち・目処未定推奨）</span>
+                                <span>気象・自然要因（天候回復待ち・目処未定推奨）</span>
                               </span>
                             )}
                           </div>
@@ -1486,7 +1486,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                                 : 'bg-slate-800 text-slate-400 hover:text-slate-200 border-slate-700'
                             }`}
                           >
-                            {useCustomMessage ? '✏️ 自由入力中' : '🔄 自動生成モード (切替)'}
+                            {useCustomMessage ? '自由入力中' : '自動生成モード (切替)'}
                           </button>
                         )}
                       </div>
@@ -1506,7 +1506,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                           ) : (
                             <div className="p-2 bg-slate-950 rounded-md border border-slate-700/80 space-y-1">
                               <span className="text-[10px] text-slate-400 block font-mono">
-                                📢 公式アナウンス自動プレビュー:
+                                公式アナウンス自動プレビュー:
                               </span>
                               <p className="text-slate-200 text-xs leading-relaxed font-sans select-all">
                                 {generatedPreview}
@@ -1864,9 +1864,9 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                         <span className="text-[11px] text-slate-300 font-medium shrink-0">警戒レベル:</span>
                         <div className="grid grid-cols-3 gap-1.5 flex-1">
                           {[
-                            { level: 'caution' as ForecastSeverity, label: '注意 (Caution)', icon: 'ℹ️', color: 'bg-blue-500/20 border-blue-400 text-blue-200' },
-                            { level: 'warning' as ForecastSeverity, label: '警戒 (Warning)', icon: '⚠️', color: 'bg-amber-500/20 border-amber-400 text-amber-200' },
-                            { level: 'critical' as ForecastSeverity, label: '重大 (Critical)', icon: '🚨', color: 'bg-rose-500/20 border-rose-400 text-rose-200' },
+                            { level: 'caution' as ForecastSeverity, label: '注意 (Caution)', color: 'bg-blue-500/20 border-blue-400 text-blue-200' },
+                            { level: 'warning' as ForecastSeverity, label: '警戒 (Warning)', color: 'bg-amber-500/20 border-amber-400 text-amber-200' },
+                            { level: 'critical' as ForecastSeverity, label: '重大 (Critical)', color: 'bg-rose-500/20 border-rose-400 text-rose-200' },
                           ].map((item) => (
                             <button
                               key={item.level}
@@ -1878,7 +1878,6 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                                   : 'bg-slate-900/70 border-slate-700 text-slate-400 hover:text-slate-200'
                               }`}
                             >
-                              <span className="mr-1">{item.icon}</span>
                               <span>{item.label}</span>
                             </button>
                           ))}
@@ -2211,7 +2210,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                               auditResult.status === 'passed' ? 'text-emerald-400' : 'text-amber-400'
                             }`}
                           >
-                            {auditResult.status === 'passed' ? '✓ 正常 (PASSED)' : '⚠ 警告あり'}
+                            {auditResult.status === 'passed' ? '正常 (PASSED)' : '警告あり'}
                           </span>
                         </div>
                         <div className="flex items-center justify-between">

@@ -1,5 +1,6 @@
 // 土浦線 (Tsuchiura Line) 日中ダイヤ構成 (土浦以北20分間隔パターン: 00分発各停全駅, 20分発快速, 40分発各停全駅 ※各停は土浦始発)
 import { disruptionManager } from './disruptionManager';
+import { getStationTimetable } from '../data/tsuchiuraStationTimetableData';
 
 export interface TimetableStop {
   stationName: string;
@@ -273,6 +274,7 @@ export interface LiveTrainPosResult {
   carCount: number;
   stationId: string;
   isBetween: boolean;
+  isStopStation?: boolean;
   delayMinutes: number;
   timetable: { stationName: string; scheduledTime: string; estimatedTime: string }[];
 }
@@ -320,8 +322,16 @@ export function getTsuchiuraLiveTrains(
             }
 
             const trainSeed = Math.abs(Math.sin(targetHour * 100 + index * 17 + direction * 31)) * 10000;
-            // 全路線・上下線あわせても総合約1.5%〜2%程度の発生率 (1/300 ≒ 0.3%)
-            const delayMinutes = Math.floor(trainSeed) % 300 === 0 ? (Math.floor(trainSeed % 3) + 1) : 0;
+            const effectiveDelay = disruptionManager.getEffectiveDelayForTrain('tsuchiura', trainSeed, direction);
+            let delayMinutes = 0;
+            if (effectiveDelay.isSuspended) {
+              delayMinutes = 99;
+            } else if (effectiveDelay.delayMinutes > 0) {
+              delayMinutes = effectiveDelay.delayMinutes;
+            } else {
+              // 通常時の極微小遅延 (1/300 ≒ 0.3%)
+              delayMinutes = Math.floor(trainSeed) % 300 === 0 ? (Math.floor(trainSeed % 3) + 1) : 0;
+            }
 
             results.push({
               id: `tc_${direction}_h${targetHour}_p${index}`,
@@ -332,6 +342,7 @@ export function getTsuchiuraLiveTrains(
               carCount: pat.trainType.includes('特急') || pat.trainType === '特別快速' ? 10 : 8,
               stationId: stObj.id,
               isBetween: false,
+              isStopStation: true,
               delayMinutes,
               timetable: pat.stops.map((st) => {
                 const arrH = Math.floor((targetHour * 60 + st.arrMin) / 60) % 24;
@@ -398,6 +409,7 @@ export function getTsuchiuraLiveTrains(
                 carCount: pat.trainType.includes('特急') || pat.trainType === '特別快速' ? 10 : 8,
                 stationId: currentStation.id,
                 isBetween,
+                isStopStation,
                 delayMinutes,
                 timetable: pat.stops.map((st) => {
                   const arrH = Math.floor((targetHour * 60 + st.arrMin) / 60) % 24;
@@ -449,40 +461,77 @@ export function getTsuchiuraDeparturesForStation(
     isOrigin?: boolean;
   }[] = [];
 
-  const patterns = platform === 1 ? TSUCHIURA_DOWN_PATTERNS : TSUCHIURA_UP_PATTERNS;
+  const timetableConfig = getStationTimetable(stationName);
+  const targetTimetable = timetableConfig ? (platform === 1 ? timetableConfig.down : timetableConfig.up) : null;
+
   const now = new Date(baseTimestamp);
   const currentHour = now.getHours();
 
-  for (let hourOffset = 0; hourOffset <= 3; hourOffset++) {
-    const targetHour = currentHour + hourOffset;
-    const baseDate = new Date(baseTimestamp);
-    baseDate.setHours(targetHour, 0, 0, 0);
-    const hourBaseMs = baseDate.getTime();
+  if (targetTimetable && targetTimetable.hours && targetTimetable.hours.length > 0) {
+    // 公式駅時刻表から正確な列車を抽出
+    for (let hourOffset = 0; hourOffset <= 3; hourOffset++) {
+      const targetHour = (currentHour + hourOffset) % 24;
+      const hourData = targetTimetable.hours.find((h) => h.hour === targetHour);
+      if (!hourData) continue;
 
-    for (let p = 0; p < patterns.length; p++) {
-      const pat = patterns[p];
-      const stop = pat.stops.find((s) => s.stationName.includes(stationName) || stationName.includes(s.stationName));
-      if (!stop) continue;
+      const baseDate = new Date(baseTimestamp);
+      baseDate.setHours(targetHour, 0, 0, 0);
+      const hourBaseMs = baseDate.getTime();
 
-      // 始発駅判定: パターンの最初の停車駅が自駅か（当駅始発は下り(platform 1)のみ対象）
-      const originStop = pat.stops[0];
-      const isOrigin = platform === 1 && !!originStop && (originStop.stationName.includes(stationName) || stationName.includes(originStop.stationName));
+      for (let t = 0; t < hourData.trains.length; t++) {
+        const train = hourData.trains[t];
+        const depTimeMs = hourBaseMs + train.minute * 60000;
+        if (depTimeMs >= baseTimestamp) {
+          const timeStr = `${String(targetHour).padStart(2, '0')}:${String(train.minute).padStart(2, '0')}`;
+          const isOrigin = platform === 1 && (stationName.includes('松戸') || (stationName.includes('土浦') && train.destination === '日立' && train.typeCode === 'LOCAL'));
 
-      const depTimeMs = hourBaseMs + stop.depMin * 60000;
-      if (depTimeMs >= baseTimestamp) {
-        const depH = Math.floor((targetHour * 60 + stop.depMin) / 60) % 24;
-        const depM = Math.floor(stop.depMin) % 60;
-        const timeStr = `${String(depH).padStart(2, '0')}:${String(depM).padStart(2, '0')}`;
+          departures.push({
+            id: `dep_tc_${stationName}_${platform}_${depTimeMs}_${t}`,
+            lineName: '土浦線',
+            trainType: train.typeName,
+            destination: train.destination,
+            departureTime: timeStr,
+            departureTimestamp: depTimeMs,
+            isOrigin,
+          });
+        }
+      }
+    }
+  } else {
+    // パターン補間フォールバック
+    const patterns = platform === 1 ? TSUCHIURA_DOWN_PATTERNS : TSUCHIURA_UP_PATTERNS;
 
-        departures.push({
-          id: `dep_tc_${stationName}_${platform}_${depTimeMs}_${p}`,
-          lineName: '4. 土浦線',
-          trainType: pat.trainType,
-          destination: pat.destination,
-          departureTime: timeStr,
-          departureTimestamp: depTimeMs,
-          isOrigin,
-        });
+    for (let hourOffset = 0; hourOffset <= 3; hourOffset++) {
+      const targetHour = currentHour + hourOffset;
+      const baseDate = new Date(baseTimestamp);
+      baseDate.setHours(targetHour, 0, 0, 0);
+      const hourBaseMs = baseDate.getTime();
+
+      for (let p = 0; p < patterns.length; p++) {
+        const pat = patterns[p];
+        const stop = pat.stops.find((s) => s.stationName.includes(stationName) || stationName.includes(s.stationName));
+        if (!stop) continue;
+
+        // 始発駅判定: パターンの最初の停車駅が自駅か（当駅始発は下り(platform 1)のみ対象）
+        const originStop = pat.stops[0];
+        const isOrigin = platform === 1 && !!originStop && (originStop.stationName.includes(stationName) || stationName.includes(originStop.stationName));
+
+        const depTimeMs = hourBaseMs + stop.depMin * 60000;
+        if (depTimeMs >= baseTimestamp) {
+          const depH = Math.floor((targetHour * 60 + stop.depMin) / 60) % 24;
+          const depM = Math.floor(stop.depMin) % 60;
+          const timeStr = `${String(depH).padStart(2, '0')}:${String(depM).padStart(2, '0')}`;
+
+          departures.push({
+            id: `dep_tc_${stationName}_${platform}_${depTimeMs}_${p}`,
+            lineName: '土浦線',
+            trainType: pat.trainType,
+            destination: pat.destination,
+            departureTime: timeStr,
+            departureTimestamp: depTimeMs,
+            isOrigin,
+          });
+        }
       }
     }
   }

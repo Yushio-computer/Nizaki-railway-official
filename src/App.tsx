@@ -16,6 +16,7 @@ import { EDeliveryModal } from './components/EDeliveryModal';
 import { NPointModal } from './components/NPointModal';
 import { RouteMapModal } from './components/RouteMapModal';
 import { QRCodeModal } from './components/QRCodeModal';
+import { StationTimetableModal } from './components/StationTimetableModal';
 import { MOCK_LINES, MOCK_STATIONS, MOCK_EQUIP_ITEMS, MOCK_LIVE_TRAINS } from './data/mockData';
 import { TabType, Station, ActiveOrder, DepartureInfo, EquipItem, PointHistoryItem } from './types';
 
@@ -107,7 +108,20 @@ export default function App() {
   const [isNPointModalOpen, setIsNPointModalOpen] = useState(false);
   const [isRouteMapModalOpen, setIsRouteMapModalOpen] = useState(false);
   const [isQRCodeModalOpen, setIsQRCodeModalOpen] = useState(false);
+  const [isTimetableModalOpen, setIsTimetableModalOpen] = useState(false);
+  const [timetableModalStation, setTimetableModalStation] = useState<string>('松戸');
+  const [timetableModalDirection, setTimetableModalDirection] = useState<1 | 2>(1);
   const [selectedCart, setSelectedCart] = useState<{ [key: string]: number }>({});
+
+  const handleOpenTimetable = (stationName?: string, direction?: 1 | 2) => {
+    if (stationName) {
+      setTimetableModalStation(stationName);
+    }
+    if (direction) {
+      setTimetableModalDirection(direction);
+    }
+    setIsTimetableModalOpen(true);
+  };
 
   // 予約状態が更新されたらローカルストレージとサーバー（/api/reservation）に同期
   React.useEffect(() => {
@@ -234,6 +248,7 @@ export default function App() {
                 setHeaderStationName(name);
                 setHeaderPlatform(plat);
               }}
+              onOpenTimetable={handleOpenTimetable}
             />
 
             {/* 3. Bottom Single Button: Brand Deep Purple Delivery Order Button */}
@@ -258,7 +273,7 @@ export default function App() {
         {/* Tab 2: 列車位置 */}
         {activeTab === 'location' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-12">
-            <TrainLocationTab />
+            <TrainLocationTab onOpenTimetable={handleOpenTimetable} />
           </div>
         )}
 
@@ -362,6 +377,13 @@ export default function App() {
         isOpen={isQRCodeModalOpen}
         onClose={() => setIsQRCodeModalOpen(false)}
         activeOrder={activeOrder}
+      />
+
+      <StationTimetableModal
+        isOpen={isTimetableModalOpen}
+        onClose={() => setIsTimetableModalOpen(false)}
+        initialStationName={timetableModalStation}
+        initialDirection={timetableModalDirection}
       />
     </PhoneContainer>
   );

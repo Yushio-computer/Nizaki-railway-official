@@ -200,8 +200,8 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
   {
     category: 'typhoon',
     name: '台風接近・暴風雨警戒',
-    badgeLabel: '🌀 台風接近警戒',
-    icon: '🌀',
+    badgeLabel: '台風接近警戒',
+    icon: 'ShieldAlert',
     defaultSeverity: 'warning',
     defaultPeriod: '本日夕方以降（16時頃〜終電）',
     defaultHoursAhead: 8,
@@ -212,8 +212,8 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
   {
     category: 'gale',
     name: '強風・速度規制注意',
-    badgeLabel: '💨 強風・速度規制注意',
-    icon: '💨',
+    badgeLabel: '強風・速度規制注意',
+    icon: 'Wind',
     defaultSeverity: 'caution',
     defaultPeriod: '本日午後から夜間にかけて',
     defaultHoursAhead: 6,
@@ -224,8 +224,8 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
   {
     category: 'heavy_rain',
     name: '大雨・集中豪雨警戒',
-    badgeLabel: '🌧️ 大雨・冠水警戒',
-    icon: '🌧️',
+    badgeLabel: '大雨・冠水警戒',
+    icon: 'CloudRain',
     defaultSeverity: 'warning',
     defaultPeriod: '本日夕方から夜遅くにかけて',
     defaultHoursAhead: 6,
@@ -236,8 +236,8 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
   {
     category: 'snow',
     name: '降雪・積雪凍結警戒',
-    badgeLabel: '❄️ 降雪・積雪凍結注意',
-    icon: '❄️',
+    badgeLabel: '降雪・積雪凍結注意',
+    icon: 'Snowflake',
     defaultSeverity: 'warning',
     defaultPeriod: '今夜から明朝にかけて',
     defaultHoursAhead: 12,
@@ -248,8 +248,8 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
   {
     category: 'thunder',
     name: '落雷・突風急変注意',
-    badgeLabel: '⚡ 落雷・突風注意',
-    icon: '⚡',
+    badgeLabel: '落雷・突風注意',
+    icon: 'Zap',
     defaultSeverity: 'caution',
     defaultPeriod: '本日午後の大気不安定時',
     defaultHoursAhead: 4,
@@ -260,8 +260,8 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
   {
     category: 'crowd_event',
     name: '沿線イベント・混雑注意',
-    badgeLabel: '🎪 イベント混雑注意',
-    icon: '🎪',
+    badgeLabel: 'イベント混雑注意',
+    icon: 'Users',
     defaultSeverity: 'caution',
     defaultPeriod: '本日17:00〜22:00頃',
     defaultHoursAhead: 5,
@@ -272,8 +272,8 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
   {
     category: 'maintenance',
     name: '計画保守・夜間工事',
-    badgeLabel: '🔧 計画保守・夜間工事',
-    icon: '🔧',
+    badgeLabel: '計画保守・夜間工事',
+    icon: 'Wrench',
     defaultSeverity: 'caution',
     defaultPeriod: '本日深夜23時以降',
     defaultHoursAhead: 8,
@@ -284,8 +284,8 @@ export const FORECAST_PRESETS: ForecastPresetDef[] = [
   {
     category: 'general',
     name: 'その他・一般運行注意',
-    badgeLabel: '⚠️ 運行注意情報',
-    icon: '⚠️',
+    badgeLabel: '運行注意情報',
+    icon: 'AlertTriangle',
     defaultSeverity: 'caution',
     defaultPeriod: '本日終日',
     defaultHoursAhead: 6,
@@ -680,7 +680,7 @@ export const disruptionManager = {
       if (!Array.isArray(parsed)) return [];
 
       const now = Date.now();
-      // 有効期限内のもののみを抽出
+      // 有効期限内のもののみを抽出 & 絵文字を完全自動除去
       const activeForecasts = parsed.filter((f) => {
         if (!f.isActive) return false;
         if (f.expiresAtTimestamp && now >= f.expiresAtTimestamp) {
@@ -688,7 +688,11 @@ export const disruptionManager = {
           return false;
         }
         return true;
-      });
+      }).map((f) => ({
+        ...f,
+        categoryLabel: f.categoryLabel ? f.categoryLabel.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1FA00}-\u{1FAFF}]/gu, '').trim() : f.categoryLabel,
+        headline: f.headline ? f.headline.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1FA00}-\u{1FAFF}]/gu, '').trim() : f.headline,
+      }));
 
       // もし期限切れで数が減っていたらストレージを自動更新
       if (activeForecasts.length !== parsed.length) {

@@ -111,9 +111,13 @@ export const StatusCard: React.FC<StatusCardProps> = ({ lines }) => {
                     : 'bg-indigo-500/10 border-indigo-300/80 text-indigo-950 dark:text-indigo-100'
                 }`}
               >
-                <div className="flex items-start gap-2">
-                  <div className="mt-0.5 shrink-0 text-base">
-                    {forecast.categoryLabel?.split(' ')[0] || (isWarning ? '⚠️' : 'ℹ️')}
+                <div className="flex items-start gap-2.5">
+                  <div className="mt-0.5 shrink-0">
+                    {isWarning ? (
+                      <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                    ) : (
+                      <Info className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                    )}
                   </div>
 
                   <div className="flex-1 min-w-0 space-y-1">

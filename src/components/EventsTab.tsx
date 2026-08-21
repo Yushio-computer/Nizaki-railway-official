@@ -173,7 +173,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({ onAddNPoints }) => {
     if (navigator.clipboard) {
       navigator.clipboard.writeText(keyword).then(() => {
         setCopiedKeyword(keyword);
-        showToast(`📋「${keyword}」をコピーしました！LINE公式アカウントで送信してください。`);
+        showToast(`「${keyword}」をコピーしました！LINE公式アカウントで送信してください。`);
         setTimeout(() => setCopiedKeyword(null), 2500);
       }).catch(() => {
         fallbackCopy(keyword);
@@ -191,7 +191,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({ onAddNPoints }) => {
     document.execCommand('copy');
     document.body.removeChild(input);
     setCopiedKeyword(text);
-    showToast(`📋「${text}」をコピーしました！LINE公式アカウントで送信してください。`);
+    showToast(`「${text}」をコピーしました！LINE公式アカウントで送信してください。`);
     setTimeout(() => setCopiedKeyword(null), 2500);
   };
 
@@ -200,7 +200,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({ onAddNPoints }) => {
     const lineUrl = `https://line.me/R/oaMessage/@kanzaki_rail/?${encodeURIComponent(keyword)}`;
     try {
       window.open(lineUrl, '_blank', 'noopener,noreferrer');
-      showToast(`🟢 LINE公式アカウントを開きます。「${keyword}」を送信するとクーポンが返信されます。`);
+      showToast(`LINE公式アカウントを開きます。「${keyword}」を送信するとクーポンが返信されます。`);
     } catch (e) {
       console.warn('Could not open LINE external URL:', e);
     }
@@ -298,9 +298,9 @@ export const EventsTab: React.FC<EventsTabProps> = ({ onAddNPoints }) => {
         onAddNPoints(targetCourse.rewardPoints, `スタンプラリー制覇特典（${targetCourse.title}）`, 'stamp');
       }
       setShowCompletionModal(targetCourse);
-      showToast(`🎉 ${targetCourse.title}完全制覇！LINEで「${targetCourse.lineKeyword}」と送信してクーポンを獲得できます！`);
+      showToast(`${targetCourse.title}完全制覇！LINEで「${targetCourse.lineKeyword}」と送信してクーポンを獲得できます！`);
     } else {
-      showToast(`🎯【GPSチェックイン成功】${station.name}のスタンプを獲得しました！（${collectedCount}/${targetCourse.stations.length}）`);
+      showToast(`【GPSチェックイン成功】${station.name}のスタンプを獲得しました！（${collectedCount}/${targetCourse.stations.length}）`);
     }
 
     if (selectedStationDetail && selectedStationDetail.id === station.id) {
@@ -318,13 +318,13 @@ export const EventsTab: React.FC<EventsTabProps> = ({ onAddNPoints }) => {
 
     const matchedCourse = findCourseByCouponCode(code);
     if (!matchedCourse) {
-      showToast('❌ 無効なクーポンコードです。LINE公式アカウントから届いたコード（例: KZ-EASY-200）をご確認ください。');
+      showToast('無効なクーポンコードです。LINE公式アカウントから届いたコード（例: KZ-EASY-200）をご確認ください。');
       return;
     }
 
     const isAlreadyApplied = appliedCoupons.some((c) => c.courseId === matchedCourse.id);
     if (isAlreadyApplied) {
-      showToast(`⚠️ このクーポンコード【${matchedCourse.lineCouponCode}】は既にアプリに適用済みです。`);
+      showToast(`このクーポンコード【${matchedCourse.lineCouponCode}】は既にアプリに適用済みです。`);
       return;
     }
 
@@ -357,7 +357,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({ onAddNPoints }) => {
       record: newRecord,
     });
 
-    showToast(`🎉 クーポンコード【${matchedCourse.lineCouponCode}】の適用に成功しました！`);
+    showToast(`クーポンコード【${matchedCourse.lineCouponCode}】の適用に成功しました！`);
   };
 
   // ボタン押下時にGPSを即座に測位して「半径300m以内」かを厳密判定
@@ -667,7 +667,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({ onAddNPoints }) => {
                 <div className="flex items-center justify-between text-[11px] text-gray-300 pt-1">
                   <span>達成時リワード: +{viewingCourse.rewardPoints} N-POINT</span>
                   <span className="font-bold text-white">
-                    {isViewingCourseCompleted ? '🎉 コース制覇達成！' : `あと ${viewingCourse.targetCount - viewingStampedCount} 駅`}
+                    {isViewingCourseCompleted ? 'コース制覇達成！' : `あと ${viewingCourse.targetCount - viewingStampedCount} 駅`}
                   </span>
                 </div>
               </div>
@@ -776,7 +776,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({ onAddNPoints }) => {
                 if (currentCoords) {
                   const distKm = calculateDistanceKm(currentCoords.lat, currentCoords.lng, st.lat, st.lng);
                   if (distKm <= 0.3) {
-                    distanceText = '📍 駅半径300m以内（チェックイン可能！）';
+                    distanceText = '駅半径300m以内（チェックイン可能！）';
                     isNearby = true;
                   } else if (distKm < 1) {
                     distanceText = `現在地から 約 ${(distKm * 1000).toFixed(0)} m (条件: 300m以内)`;
@@ -1161,7 +1161,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({ onAddNPoints }) => {
                 <span>+{showCompletionModal.rewardPoints} N-POINT</span>
               </div>
               <div className="text-xs font-bold text-gray-700 bg-white/80 py-1 px-3 rounded-lg border border-amber-200/60">
-                🏅 {showCompletionModal.rewardBadge} 付与
+                {showCompletionModal.rewardBadge} 付与
               </div>
             </div>
 
@@ -1289,7 +1289,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({ onAddNPoints }) => {
                     【神埼鉄道】スタンプラリー全駅制覇！
                   </span>
                   <p className="text-[11px]">
-                    {showLineFlowModal.title}の全駅達成おめでとうございます！🎉
+                    {showLineFlowModal.title}の全駅達成おめでとうございます！
                   </p>
                   <p className="text-[11px]">
                     下記の文章をそのままこのトークに送信すると、限定クーポンが即時発行されます。
@@ -1326,7 +1326,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({ onAddNPoints }) => {
                       {showLineFlowModal.couponRewardDetail}
                     </p>
                     <div className="text-[10px] font-black text-[#059669]">
-                      🎁 ボーナス: +{showLineFlowModal.bonusPoints} N-POINT
+                      ボーナス: +{showLineFlowModal.bonusPoints} N-POINT
                     </div>
                   </div>
 
@@ -1721,7 +1721,7 @@ function handleReservationInquiry(replyToken, userId, text) {
     for (let i = data.length - 1; i >= 1; i--) {
       const row = data[i];
       if ((userId !== 'unknown' && String(row[userIndex]) === userId) || (idIndex !== -1 && text.toUpperCase().includes(String(row[idIndex])))) {
-        const replyText = \`🎫【ご予約確認】\\n予約番号: \${row[idIndex]}\\n列車名: \${row[trainIndex]}\\n座席: \${row[seatIndex]}\\nお支払額: \${row[totalIndex]}\`;
+        const replyText = \`【ご予約確認】\\n予約番号: \${row[idIndex]}\\n列車名: \${row[trainIndex]}\\n座席: \${row[seatIndex]}\\nお支払額: \${row[totalIndex]}\`;
         replyToLine(replyToken, [{ type: 'text', text: replyText }]);
         return;
       }
@@ -1731,7 +1731,7 @@ function handleReservationInquiry(replyToken, userId, text) {
 }
 
 function handleOperationStatus(replyToken) {
-  replyToLine(replyToken, [{ type: 'text', text: '🚆【運行情報】現在、全線で平常通り運行しております。' }]);
+  replyToLine(replyToken, [{ type: 'text', text: '【運行情報】現在、全線で平常通り運行しております。' }]);
 }
 
 function replyToLine(replyToken, messages) {
