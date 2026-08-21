@@ -8,13 +8,10 @@ import {
   Trash2,
   RefreshCw,
   Database,
-  Smartphone,
   Terminal,
   Lock,
   KeyRound,
   Check,
-  ChevronRight,
-  ChevronDown,
   Bug,
   Layers,
   Search,
@@ -23,12 +20,12 @@ import {
   RotateCcw,
   Radio,
   FileCheck,
-  Sliders,
-  MessageSquare,
   Zap,
   Clock3,
   MapPin,
-  Flame,
+  ArrowLeftRight,
+  Sliders,
+  ChevronDown,
 } from 'lucide-react';
 import { systemLogger, SystemLogEntry, SystemMetrics, AuditResult } from '../utils/systemLogger';
 import {
@@ -39,6 +36,7 @@ import {
   COMMON_REASONS,
   COMMON_SECTIONS,
   generateDisruptionText,
+  getStationsForLine,
 } from '../utils/disruptionManager';
 
 interface AdminConsoleModalProps {
@@ -64,8 +62,8 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   const [newPinInput, setNewPinInput] = useState('');
   const [pinChangeSuccess, setPinChangeSuccess] = useState(false);
 
-  // Tabs: 'disruption' | 'metrics' | 'errors' | 'emergency' | 'storage' | 'settings'
-  const [activeTab, setActiveTab] = useState<'disruption' | 'metrics' | 'errors' | 'emergency' | 'storage' | 'settings'>('disruption');
+  // Tabs: 'disruption' | 'diagnostics' | 'errors' | 'storage' | 'settings'
+  const [activeTab, setActiveTab] = useState<'disruption' | 'diagnostics' | 'errors' | 'storage' | 'settings'>('disruption');
 
   // Disruption Dispatcher State
   const [selectedLineId, setSelectedLineId] = useState<string>('kanzaki');
@@ -73,6 +71,9 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   const [maxDelayMinutes, setMaxDelayMinutes] = useState<number>(15);
   const [durationUntil, setDurationUntil] = useState<string>('18:30頃まで');
   const [section, setSection] = useState<string>('全線');
+  const [sectionMode, setSectionMode] = useState<'all' | 'station_pair' | 'direction_up' | 'direction_down' | 'custom'>('all');
+  const [fromStation, setFromStation] = useState<string>('東京');
+  const [toStation, setToStation] = useState<string>('大宮');
   const [reason, setReason] = useState<string>('車両点検のため');
   const [useCustomMessage, setUseCustomMessage] = useState<boolean>(false);
   const [customMessage, setCustomMessage] = useState<string>('');
@@ -81,28 +82,122 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     disruptionManager.getAllDisruptions()
   );
 
+  // System & Diagnostics State
+  const [logs, setLogs] = useState<SystemLogEntry[]>([]);
+  const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
+  const [logFilter, setLogFilter] = useState<'all' | 'error' | 'warn' | 'info'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [copiedText, setCopiedText] = useState(false);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+
+  // Emergency Tools State
+  const [emergencyAlertText, setEmergencyAlertText] = useState('');
+  const [emergencyAlertActive, setEmergencyAlertActive] = useState(false);
+  const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
+  const [isAuditing, setIsAuditing] = useState(false);
+
+  // Storage Inspector State
+  const [selectedStorageKey, setSelectedStorageKey] = useState<string | null>(null);
+  const [storageDataView, setStorageDataView] = useState<string | null>(null);
+  const [showClearStorageConfirm, setShowClearStorageConfirm] = useState(false);
+
   // Load line-specific disruption config
   const loadLineConfig = (lineId: string) => {
     setSelectedLineId(lineId);
+    const stations = getStationsForLine(lineId);
+    const defaultFrom = stations[0] || '東京';
+    const defaultTo = stations[Math.min(stations.length - 1, 11)] || stations[stations.length - 1] || '大宮';
+
     const existing = disruptionManager.getLineDisruption(lineId);
     if (existing) {
       setDisruptionStatusType(existing.statusType);
       setMaxDelayMinutes(existing.maxDelayMinutes || 15);
       setDurationUntil(existing.durationUntil || '');
-      setSection(existing.section || '全線');
+      const existingSec = existing.section || '全線';
+      setSection(existingSec);
       setReason(existing.reason || '車両点検のため');
       setUseCustomMessage(existing.useCustomMessage || false);
       setCustomMessage(existing.customMessage || '');
       setLinkToSystem(existing.linkToSystem ?? true);
+
+      // Determine sectionMode & stations
+      if (existingSec === '全線') {
+        setSectionMode('all');
+        setFromStation(defaultFrom);
+        setToStation(defaultTo);
+      } else if (existingSec === '上り線のみ') {
+        setSectionMode('direction_up');
+        setFromStation(defaultFrom);
+        setToStation(defaultTo);
+      } else if (existingSec === '下り線のみ') {
+        setSectionMode('direction_down');
+        setFromStation(defaultFrom);
+        setToStation(defaultTo);
+      } else if (existingSec.includes('〜')) {
+        setSectionMode('station_pair');
+        const parts = existingSec.replace('間', '').split('〜').map((s) => s.trim());
+        if (parts.length === 2 && stations.includes(parts[0]) && stations.includes(parts[1])) {
+          setFromStation(parts[0]);
+          setToStation(parts[1]);
+        } else {
+          setFromStation(defaultFrom);
+          setToStation(defaultTo);
+        }
+      } else {
+        setSectionMode('custom');
+        setFromStation(defaultFrom);
+        setToStation(defaultTo);
+      }
     } else {
       setDisruptionStatusType('delay');
       setMaxDelayMinutes(15);
       setDurationUntil('18:30頃まで');
       setSection('全線');
+      setSectionMode('all');
+      setFromStation(defaultFrom);
+      setToStation(defaultTo);
       setReason('車両点検のため');
       setUseCustomMessage(false);
       setCustomMessage('');
       setLinkToSystem(true);
+    }
+  };
+
+  // Handle station selection change
+  const handleFromStationChange = (newFrom: string) => {
+    setFromStation(newFrom);
+    if (sectionMode === 'station_pair') {
+      setSection(`${newFrom} 〜 ${toStation} 間`);
+    }
+  };
+
+  const handleToStationChange = (newTo: string) => {
+    setToStation(newTo);
+    if (sectionMode === 'station_pair') {
+      setSection(`${fromStation} 〜 ${newTo} 間`);
+    }
+  };
+
+  const handleSwapStations = () => {
+    const nextFrom = toStation;
+    const nextTo = fromStation;
+    setFromStation(nextFrom);
+    setToStation(nextTo);
+    if (sectionMode === 'station_pair') {
+      setSection(`${nextFrom} 〜 ${nextTo} 間`);
+    }
+  };
+
+  const handleSectionModeChange = (mode: 'all' | 'station_pair' | 'direction_up' | 'direction_down' | 'custom') => {
+    setSectionMode(mode);
+    if (mode === 'all') {
+      setSection('全線');
+    } else if (mode === 'station_pair') {
+      setSection(`${fromStation} 〜 ${toStation} 間`);
+    } else if (mode === 'direction_up') {
+      setSection('上り線のみ');
+    } else if (mode === 'direction_down') {
+      setSection('下り線のみ');
     }
   };
 
@@ -158,7 +253,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       setCustomMessage('');
     }
     systemLogger.info(`[運行指令] ${lineDef.name} を平常運転に復帰しました`, 'DisruptionDispatcher');
-    setActionNotice(`${lineDef.name} を平常運転に復帰しました`);
+    setActionNotice(`【平常復帰】${lineDef.name} を平常運転に設定しました`);
     setTimeout(() => setActionNotice(null), 3000);
     if (onRefreshAppState) onRefreshAppState();
   };
@@ -170,33 +265,11 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     setDisruptionStatusType('normal');
     setUseCustomMessage(false);
     setCustomMessage('');
-    systemLogger.info('[運行指令] 全路線の運行情報を平常運転に一括復帰しました', 'DisruptionDispatcher');
-    setActionNotice('全路線の運行情報を平常運転に一括復帰しました');
-    setTimeout(() => setActionNotice(null), 3000);
+    systemLogger.info('[運行指令] 全線の運行支障を一括解除し平常運転に復帰しました', 'DisruptionDispatcher');
+    setActionNotice('【全線平常復帰】すべての路線の遅延・運休を解除しました');
+    setTimeout(() => setActionNotice(null), 3500);
     if (onRefreshAppState) onRefreshAppState();
   };
-
-  // Logs & Metrics
-  const [logs, setLogs] = useState<SystemLogEntry[]>([]);
-  const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
-  const [logFilter, setLogFilter] = useState<'all' | 'error' | 'warn' | 'info'>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
-  const [copiedText, setCopiedText] = useState(false);
-
-  // Emergency Audit State
-  const [auditResult, setAuditResult] = useState<AuditResult | null>(null);
-  const [isAuditing, setIsAuditing] = useState(false);
-  const [emergencyAlertText, setEmergencyAlertText] = useState('');
-  const [emergencyAlertActive, setEmergencyAlertActive] = useState(false);
-  const [actionNotice, setActionNotice] = useState<string | null>(null);
-
-  // Storage Confirmation Dialog State
-  const [showClearStorageConfirm, setShowClearStorageConfirm] = useState(false);
-
-  // Selected storage key for inspection
-  const [selectedStorageKey, setSelectedStorageKey] = useState<string | null>(null);
-  const [storageDataView, setStorageDataView] = useState<string | null>(null);
 
   // Handle modal close with auth reset
   const handleClose = () => {
@@ -209,7 +282,6 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
 
   // Reset auth and load custom PIN & emergency alert state whenever modal opens/closes
   useEffect(() => {
-    // Always require re-authentication on every open
     setIsAuthenticated(false);
     setPinInput('');
     setPinError(false);
@@ -279,7 +351,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     setPinError(false);
   };
 
-  // Strictly verify against current active PIN only (no backdoors, no old PIN bypass)
+  // Strictly verify against current active PIN only
   const verifyPin = (inputToTest: string) => {
     if (inputToTest === currentPin) {
       setIsAuthenticated(true);
@@ -336,7 +408,11 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   };
 
   const handleEmergencyResync = () => {
-    if (confirm('緊急データ再同期を実行しますか？\n（ユーザー情報・ポイントを保持したまま、運行データおよび一時キャッシュを再構築します）')) {
+    if (
+      confirm(
+        '緊急データ再同期を実行しますか？\n（ユーザー情報・ポイントを保持したまま、運行データおよび一時キャッシュを再構築します）'
+      )
+    ) {
       const ok = systemLogger.emergencyCacheResync();
       if (ok) {
         setMetrics(systemLogger.getMetrics());
@@ -451,34 +527,36 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   });
 
   const errorCount = logs.filter((l) => l.level === 'error' || l.level === 'critical').length;
-  const warnCount = logs.filter((l) => l.level === 'warn').length;
+  const currentLineDef = DEFAULT_LINE_INFOS.find((l) => l.id === selectedLineId) || DEFAULT_LINE_INFOS[0];
+  const currentStations = getStationsForLine(selectedLineId);
+  const activeDisruptionCount = Object.keys(activeDisruptionsMap).length;
 
   return (
     <div
       id="admin-console-modal-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs transition-opacity"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs transition-opacity"
     >
       <div
         id="admin-console-modal-card"
-        className="bg-[#1A1D24] border border-[#2D3342] rounded-2xl w-full max-w-xl h-[620px] max-h-[92vh] flex flex-col shadow-2xl text-slate-200 overflow-hidden relative"
+        className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-xl h-[620px] max-h-[92vh] flex flex-col shadow-2xl text-slate-100 overflow-hidden relative"
       >
-        {/* Header - Calm Slate Header */}
-        <div className="px-4 py-3 bg-[#212631] border-b border-[#2D3342] flex items-center justify-between shrink-0">
+        {/* Header - Universal Design Compliant High-Contrast Calm Bar */}
+        <div className="px-4 py-3 bg-slate-800 border-b border-slate-700 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-6 h-6 rounded-md bg-[#31394B] flex items-center justify-center text-slate-300">
-              {isAuthenticated ? <Terminal className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+            <div className="w-7 h-7 rounded-lg bg-slate-700 flex items-center justify-center text-slate-200">
+              {isAuthenticated ? <Terminal className="w-4 h-4 text-indigo-400" /> : <Lock className="w-4 h-4 text-amber-400" />}
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-xs text-slate-100">
-                  システム管理・緊急対策コンソール
+                <span className="font-bold text-xs sm:text-sm text-slate-50 tracking-tight">
+                  神埼鉄道 管理者指令コンソール
                 </span>
-                <span className="px-1.5 py-0.2 bg-[#2D3342] text-slate-300 text-[10px] font-mono rounded">
-                  v3.8.1
+                <span className="px-1.5 py-0.5 bg-slate-700 text-slate-300 text-[10px] font-mono font-bold rounded">
+                  v3.9.0
                 </span>
               </div>
               <p className="text-[10px] text-slate-400">
-                {isAuthenticated ? '神埼鉄道 運行指令・システム診断' : '認証が必要です'}
+                {isAuthenticated ? '運行指令・駅間影響設定・システム診断' : 'アクセスには4桁の認証パスコードが必要です'}
               </p>
             </div>
           </div>
@@ -491,45 +569,45 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                   setPinInput('');
                   setPinError(false);
                 }}
-                className="px-2 py-1 bg-[#2D3342] hover:bg-[#384052] text-slate-300 hover:text-white rounded text-[10px] flex items-center gap-1 transition-colors cursor-pointer"
-                title="ログアウト"
+                className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white rounded text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                title="セッションをロック"
               >
-                <Lock className="w-3 h-3" />
+                <Lock className="w-3 h-3 text-amber-400" />
                 <span>ロック</span>
               </button>
             )}
             <button
               onClick={handleClose}
-              className="w-6 h-6 rounded-md bg-[#2D3342] hover:bg-[#384052] text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+              className="w-7 h-7 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
               title="閉じる"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Action Notice Bar */}
+        {/* Action Notice Banner */}
         {actionNotice && (
-          <div className="px-3 py-1.5 bg-indigo-950/40 border-b border-indigo-800/40 text-indigo-200 text-[11px] flex items-center gap-1.5 shrink-0">
-            <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400" />
-            <span>{actionNotice}</span>
+          <div className="px-3.5 py-2 bg-indigo-950 border-b border-indigo-700/60 text-indigo-200 text-xs flex items-center gap-2 shrink-0 animate-fadeIn">
+            <CheckCircle2 className="w-4 h-4 text-indigo-400 shrink-0" />
+            <span className="font-medium">{actionNotice}</span>
           </div>
         )}
 
         {/* Modal Body */}
         {!isAuthenticated ? (
           /* ========================================================
-             1. Passcode Authentication Screen (Fixed-Height Zero-Jumping Layout)
+             1. Passcode Authentication Screen (UD & High Contrast)
              ======================================================== */
           <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-3.5 min-h-0 select-none">
-            <div className="w-12 h-12 rounded-2xl bg-[#252B38] border border-[#333B4C] flex items-center justify-center text-indigo-400 shadow-inner">
+            <div className="w-13 h-13 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-amber-400 shadow-md">
               <KeyRound className="w-6 h-6" />
             </div>
 
             <div className="space-y-1">
               <h3 className="text-sm font-bold text-slate-100">管理者パスコードを入力</h3>
               <p className="text-[11px] text-slate-400">
-                運行システム診断・運行指令ツールを開きます
+                運行指令・遅延設定およびシステム診断ツールを開きます
               </p>
             </div>
 
@@ -540,17 +618,17 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                   key={index}
                   className={`w-3.5 h-3.5 rounded-full transition-all duration-150 ${
                     pinInput.length > index
-                      ? 'bg-amber-400 scale-110 shadow-xs shadow-amber-400/40'
-                      : 'bg-[#2D3342] border border-[#3D4558]'
+                      ? 'bg-amber-400 scale-115 shadow-sm shadow-amber-400/50'
+                      : 'bg-slate-700 border border-slate-600'
                   }`}
                 />
               ))}
             </div>
 
-            {/* Fixed Height Slot: Prevents layout stretching when wrong PIN is entered */}
+            {/* Fixed Height Slot: Prevents layout jumping */}
             <div className="h-5 flex items-center justify-center">
               <p
-                className={`text-[11px] text-rose-400 font-medium flex items-center gap-1 transition-opacity duration-150 ${
+                className={`text-[11px] text-rose-400 font-semibold flex items-center gap-1 transition-opacity duration-150 ${
                   pinError ? 'opacity-100' : 'opacity-0 pointer-events-none'
                 }`}
               >
@@ -560,7 +638,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
             </div>
 
             {/* Numeric Keypad */}
-            <div className="grid grid-cols-3 gap-2 w-56 max-w-full">
+            <div className="grid grid-cols-3 gap-2 w-60 max-w-full">
               {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map((k) => (
                 <button
                   key={k}
@@ -569,10 +647,10 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                     else if (k === '⌫') handleKeypadBackspace();
                     else handleKeypadPress(k);
                   }}
-                  className={`h-11 rounded-xl font-mono text-sm font-medium transition-all active:scale-95 flex items-center justify-center cursor-pointer ${
+                  className={`h-11 rounded-xl font-mono text-sm font-semibold transition-all active:scale-95 flex items-center justify-center cursor-pointer ${
                     k === 'C' || k === '⌫'
-                      ? 'bg-[#212631] text-slate-400 hover:bg-[#2B3240] hover:text-slate-200 text-xs font-sans'
-                      : 'bg-[#252B38] hover:bg-[#2F3647] text-slate-200 border border-[#333B4C] hover:border-slate-500 shadow-xs'
+                      ? 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-100 text-xs font-sans'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 hover:border-slate-500 shadow-sm'
                   }`}
                 >
                   {k}
@@ -582,71 +660,56 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
           </div>
         ) : (
           /* ========================================================
-             2. Authenticated Admin Dashboard (Fixed Tab Frame)
+             2. Authenticated Admin Dashboard (5 Clean UD Tabs)
              ======================================================== */
           <div className="flex flex-col flex-1 overflow-hidden min-h-0">
-            {/* Sub Nav Tabs */}
-            <div className="px-3 bg-[#212631] border-b border-[#2D3342] flex gap-1 overflow-x-auto shrink-0 scrollbar-none">
+            {/* Clean Tab Navigation Bar */}
+            <div className="px-3 bg-slate-800/90 border-b border-slate-700 flex gap-1 overflow-x-auto shrink-0 scrollbar-none">
               <button
                 onClick={() => setActiveTab('disruption')}
-                className={`px-3 py-2 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 border-b-2 ${
+                className={`px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 border-b-2 ${
                   activeTab === 'disruption'
-                    ? 'text-slate-100 border-amber-400 font-semibold'
+                    ? 'text-amber-400 border-amber-400'
                     : 'text-slate-400 hover:text-slate-200 border-transparent'
                 }`}
               >
                 <Radio className="w-3.5 h-3.5 text-amber-400" />
-                <span>運行指令・遅延</span>
-                {Object.keys(activeDisruptionsMap).length > 0 && (
-                  <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded text-[9px] font-mono font-medium">
-                    {Object.keys(activeDisruptionsMap).length}
+                <span>運行指令</span>
+                {activeDisruptionCount > 0 && (
+                  <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded text-[10px] font-mono font-bold">
+                    {activeDisruptionCount}
                   </span>
                 )}
               </button>
 
               <button
-                onClick={() => setActiveTab('metrics')}
-                className={`px-3 py-2 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 border-b-2 ${
-                  activeTab === 'metrics'
-                    ? 'text-slate-100 border-indigo-400 font-semibold'
+                onClick={() => setActiveTab('diagnostics')}
+                className={`px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 border-b-2 ${
+                  activeTab === 'diagnostics'
+                    ? 'text-indigo-400 border-indigo-400'
                     : 'text-slate-400 hover:text-slate-200 border-transparent'
                 }`}
               >
                 <Activity className="w-3.5 h-3.5" />
-                <span>概要・診断</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('emergency')}
-                className={`px-3 py-2 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 border-b-2 ${
-                  activeTab === 'emergency'
-                    ? 'text-slate-100 border-indigo-400 font-semibold'
-                    : 'text-slate-400 hover:text-slate-200 border-transparent'
-                }`}
-              >
-                <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-                <span>緊急対策</span>
-                {emergencyAlertActive && (
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                )}
+                <span>システム診断</span>
               </button>
 
               <button
                 onClick={() => setActiveTab('errors')}
-                className={`px-3 py-2 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 border-b-2 ${
+                className={`px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 border-b-2 ${
                   activeTab === 'errors'
-                    ? 'text-slate-100 border-indigo-400 font-semibold'
+                    ? 'text-indigo-400 border-indigo-400'
                     : 'text-slate-400 hover:text-slate-200 border-transparent'
                 }`}
               >
                 <Bug className="w-3.5 h-3.5" />
                 <span>エラーログ</span>
                 {errorCount > 0 ? (
-                  <span className="px-1.5 py-0.2 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded text-[9px] font-mono font-medium">
+                  <span className="px-1.5 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 rounded text-[10px] font-mono font-bold">
                     {errorCount}
                   </span>
                 ) : (
-                  <span className="px-1.5 py-0.2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded text-[9px] font-mono">
+                  <span className="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded text-[10px] font-mono">
                     0
                   </span>
                 )}
@@ -654,9 +717,9 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
 
               <button
                 onClick={() => setActiveTab('storage')}
-                className={`px-3 py-2 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 border-b-2 ${
+                className={`px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 border-b-2 ${
                   activeTab === 'storage'
-                    ? 'text-slate-100 border-indigo-400 font-semibold'
+                    ? 'text-indigo-400 border-indigo-400'
                     : 'text-slate-400 hover:text-slate-200 border-transparent'
                 }`}
               >
@@ -666,9 +729,9 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
 
               <button
                 onClick={() => setActiveTab('settings')}
-                className={`px-3 py-2 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 border-b-2 ${
+                className={`px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 border-b-2 ${
                   activeTab === 'settings'
-                    ? 'text-slate-100 border-indigo-400 font-semibold'
+                    ? 'text-indigo-400 border-indigo-400'
                     : 'text-slate-400 hover:text-slate-200 border-transparent'
                 }`}
               >
@@ -680,10 +743,9 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
             {/* Tab Contents */}
             <div className="p-3.5 overflow-y-auto flex-1 space-y-3 text-xs">
               {/* ========================================================
-                  TAB 0: 運行指令・遅延設定 (Disruption Dispatcher)
+                  TAB 0: 運行指令・遅延設定 (Universal Design & Flexible Dropdown Sections)
                   ======================================================== */}
               {activeTab === 'disruption' && (() => {
-                const currentLineDef = DEFAULT_LINE_INFOS.find((l) => l.id === selectedLineId) || DEFAULT_LINE_INFOS[0];
                 const generatedPreview = generateDisruptionText(
                   currentLineDef.name,
                   disruptionStatusType,
@@ -692,35 +754,36 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                   reason,
                   durationUntil
                 );
-                const activeDisruptionCount = Object.keys(activeDisruptionsMap).length;
 
                 return (
                   <div className="space-y-3">
-                    {/* Disruption Header Banner */}
-                    <div className="p-2.5 rounded-xl bg-[#212631] border border-[#2D3342] flex items-center justify-between">
+                    {/* Disruption Status Summary Banner */}
+                    <div className="p-2.5 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
-                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-                          activeDisruptionCount > 0
-                            ? 'bg-amber-500/15 border border-amber-500/30 text-amber-400'
-                            : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
-                        }`}>
+                        <div
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                            activeDisruptionCount > 0
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                              : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                          }`}
+                        >
                           <Radio className="w-4 h-4" />
                         </div>
                         <div>
-                          <div className="font-semibold text-slate-200 text-xs flex items-center gap-1.5">
-                            <span>運行指令・遅延管理システム</span>
+                          <div className="font-bold text-slate-100 text-xs flex items-center gap-1.5">
+                            <span>運行指令マネージャー</span>
                             {activeDisruptionCount > 0 ? (
-                              <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono">
+                              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-bold">
                                 {activeDisruptionCount}路線で支障発令中
                               </span>
                             ) : (
-                              <span className="px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-mono">
-                                全線 平常運転中
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 text-[10px] font-bold">
+                                全線 平常運転
                               </span>
                             )}
                           </div>
                           <p className="text-[10px] text-slate-400">
-                            路線・遅延・区間・理由を設定し、ホーム運行カード・走行位置・発車標と即時連動
+                            路線・運行区分・遅延分数・影響区間（駅プルダウン式）を即時連動
                           </p>
                         </div>
                       </div>
@@ -728,7 +791,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                       {activeDisruptionCount > 0 && (
                         <button
                           onClick={handleClearAllDisruptions}
-                          className="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 rounded text-[10px] flex items-center gap-1 cursor-pointer transition-colors"
+                          className="px-2.5 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded-lg text-[11px] font-medium flex items-center gap-1 cursor-pointer transition-colors"
                           title="すべての路線の運行支障を一括で解除します"
                         >
                           <RotateCcw className="w-3 h-3" />
@@ -737,21 +800,24 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                       )}
                     </div>
 
-                    {/* Step 1: Target Line Selection */}
-                    <div className="p-3 bg-[#212631] rounded-xl border border-[#2D3342] space-y-2">
+                    {/* Step 1: Target Line & Status Type */}
+                    <div className="p-3 bg-slate-800/90 rounded-xl border border-slate-700 space-y-2.5">
                       <div className="flex items-center justify-between">
-                        <label className="text-slate-300 font-semibold text-xs flex items-center gap-1.5">
-                          <span className="w-4 h-4 rounded-full bg-slate-700 text-slate-300 text-[10px] flex items-center justify-center font-bold">1</span>
-                          <span>対象路線を選択</span>
+                        <label className="text-slate-100 font-bold text-xs flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded-full bg-slate-700 text-slate-200 text-[10px] flex items-center justify-center font-bold">
+                            1
+                          </span>
+                          <span>対象路線と運行区分を選択</span>
                         </label>
                         {activeDisruptionsMap[selectedLineId] && (
-                          <span className="text-[10px] text-amber-400 font-medium flex items-center gap-1">
+                          <span className="text-[10px] text-amber-400 font-bold flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
                             <span>発令中</span>
                           </span>
                         )}
                       </div>
 
+                      {/* Line Selector Buttons */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                         {DEFAULT_LINE_INFOS.map((line) => {
                           const isSelected = selectedLineId === line.id;
@@ -760,21 +826,21 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                             <button
                               key={line.id}
                               onClick={() => loadLineConfig(line.id)}
-                              className={`p-2 rounded-lg border text-left transition-all cursor-pointer flex flex-col justify-between relative ${
+                              className={`p-2 rounded-lg border text-left transition-all cursor-pointer flex flex-col justify-between ${
                                 isSelected
-                                  ? 'bg-[#2A303F] border-amber-400/80 text-white shadow-sm ring-1 ring-amber-400/40'
-                                  : 'bg-[#1A1D24] border-[#2D3342] text-slate-300 hover:bg-[#232834]'
+                                  ? 'bg-slate-750 border-amber-400 text-white ring-1 ring-amber-400/50 shadow-sm'
+                                  : 'bg-slate-900/80 border-slate-700 text-slate-300 hover:bg-slate-750'
                               }`}
                             >
                               <div className="flex items-center justify-between">
                                 <span
-                                  className="w-5 h-5 rounded text-[10px] font-mono font-black text-white flex items-center justify-center shadow-2xs"
+                                  className="w-5 h-5 rounded text-[10px] font-mono font-black text-white flex items-center justify-center shadow-xs"
                                   style={{ backgroundColor: line.color }}
                                 >
                                   {line.code}
                                 </span>
                                 {hasDisruption && (
-                                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="支障発生中" />
+                                  <span className="w-2 h-2 rounded-full bg-amber-400" title="運行支障あり" />
                                 )}
                               </div>
                               <div className="mt-1.5">
@@ -787,128 +853,271 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                           );
                         })}
                       </div>
+
+                      {/* Status Type 4-Way Segmented Buttons (Color Universal Design) */}
+                      <div className="pt-2 border-t border-slate-700">
+                        <span className="text-[10px] text-slate-400 block mb-1.5 font-medium">運行状況（ステータス）:</span>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                          {[
+                            {
+                              type: 'delay',
+                              symbol: '▲',
+                              label: '列車遅延',
+                              desc: '遅延発生',
+                              activeStyle: 'border-amber-400 bg-amber-500/20 text-amber-200 font-bold',
+                            },
+                            {
+                              type: 'suspended',
+                              symbol: '✕',
+                              label: '運転見合わせ',
+                              desc: '全線運転停止',
+                              activeStyle: 'border-rose-400 bg-rose-500/20 text-rose-200 font-bold',
+                            },
+                            {
+                              type: 'partially_suspended',
+                              symbol: '◓',
+                              label: '一部区間運休',
+                              desc: '特定区間運休',
+                              activeStyle: 'border-orange-400 bg-orange-500/20 text-orange-200 font-bold',
+                            },
+                            {
+                              type: 'normal',
+                              symbol: '●',
+                              label: '平常運転',
+                              desc: '定時運行',
+                              activeStyle: 'border-emerald-400 bg-emerald-500/20 text-emerald-200 font-bold',
+                            },
+                          ].map((item) => (
+                            <button
+                              key={item.type}
+                              onClick={() => setDisruptionStatusType(item.type as DisruptionStatusType)}
+                              className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                                disruptionStatusType === item.type
+                                  ? item.activeStyle
+                                  : 'bg-slate-900/80 border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-750'
+                              }`}
+                            >
+                              <div className="text-[11px] font-bold flex items-center gap-1">
+                                <span className="text-xs">{item.symbol}</span>
+                                <span>{item.label}</span>
+                              </div>
+                              <div className="text-[9px] opacity-80">{item.desc}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Step 2: Disruption Type & Max Delay */}
-                    <div className="p-3 bg-[#212631] rounded-xl border border-[#2D3342] space-y-2.5">
-                      <label className="text-slate-300 font-semibold text-xs flex items-center gap-1.5">
-                        <span className="w-4 h-4 rounded-full bg-slate-700 text-slate-300 text-[10px] flex items-center justify-center font-bold">2</span>
-                        <span>運行状況・遅延規模の設定</span>
-                      </label>
+                    {/* Step 2: Delay Scale, Section (Express Ticket Style Dropdown), Reason & Duration */}
+                    {disruptionStatusType !== 'normal' && (
+                      <div className="p-3 bg-slate-800/90 rounded-xl border border-slate-700 space-y-3">
+                        <label className="text-slate-100 font-bold text-xs flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded-full bg-slate-700 text-slate-200 text-[10px] flex items-center justify-center font-bold">
+                            2
+                          </span>
+                          <span>遅延規模・影響区間（プルダウン）・発生理由</span>
+                        </label>
 
-                      {/* Status Type Segmented Buttons */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                        {[
-                          { type: 'delay', label: '列車遅延', desc: '1〜最大X分遅れ', color: 'border-amber-500 bg-amber-500/10 text-amber-300' },
-                          { type: 'suspended', label: '運転見合わせ', desc: '全線で運転停止', color: 'border-rose-500 bg-rose-500/15 text-rose-300' },
-                          { type: 'partially_suspended', label: '一部区間運休', desc: '特定区間運休', color: 'border-orange-500 bg-orange-500/15 text-orange-300' },
-                          { type: 'normal', label: '平常運転', desc: '通常ダイヤ運行', color: 'border-emerald-500 bg-emerald-500/10 text-emerald-300' },
-                        ].map((item) => (
-                          <button
-                            key={item.type}
-                            onClick={() => setDisruptionStatusType(item.type as DisruptionStatusType)}
-                            className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
-                              disruptionStatusType === item.type
-                                ? `${item.color} font-bold shadow-2xs`
-                                : 'bg-[#1A1D24] border-[#2D3342] text-slate-400 hover:text-slate-200 hover:bg-[#232834]'
-                            }`}
-                          >
-                            <div className="text-[11px] font-bold">{item.label}</div>
-                            <div className="text-[9px] opacity-80">{item.desc}</div>
-                          </button>
-                        ))}
-                      </div>
+                        {/* Max Delay Minutes (When delay or partially suspended) */}
+                        {(disruptionStatusType === 'delay' || disruptionStatusType === 'partially_suspended') && (
+                          <div className="space-y-2 bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/80">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] text-slate-200 font-semibold flex items-center gap-1.5">
+                                <Clock3 className="w-3.5 h-3.5 text-amber-400" />
+                                <span>最大遅延時間:</span>
+                                <strong className="text-amber-400 font-mono text-sm ml-0.5">
+                                  最大 約{maxDelayMinutes}分遅れ
+                                </strong>
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                (各列車に 1〜{maxDelayMinutes}分の遅れを自動乱数配分)
+                              </span>
+                            </div>
 
-                      {/* Max Delay Minutes (When delay or partially suspended) */}
-                      {(disruptionStatusType === 'delay' || disruptionStatusType === 'partially_suspended') && (
-                        <div className="pt-2 border-t border-[#2D3342] space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] text-slate-300 font-medium flex items-center gap-1">
-                              <Clock3 className="w-3.5 h-3.5 text-amber-400" />
-                              <span>最大遅延時間:</span>
-                              <strong className="text-amber-400 font-mono text-sm ml-1">
-                                最大 約{maxDelayMinutes}分遅れ
-                              </strong>
-                            </span>
-                            <span className="text-[10px] text-slate-400">
-                              (各列車に 1〜{maxDelayMinutes}分の遅れを自動乱数配分)
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="range"
-                              min={1}
-                              max={120}
-                              step={1}
-                              value={maxDelayMinutes}
-                              onChange={(e) => setMaxDelayMinutes(Number(e.target.value))}
-                              className="flex-1 accent-amber-400 cursor-pointer h-1.5 bg-[#1A1D24] rounded-lg"
-                            />
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-3">
                               <input
-                                type="number"
+                                type="range"
                                 min={1}
-                                max={180}
+                                max={120}
+                                step={1}
                                 value={maxDelayMinutes}
-                                onChange={(e) => setMaxDelayMinutes(Math.max(1, Number(e.target.value) || 1))}
-                                className="w-14 px-2 py-1 bg-[#1A1D24] border border-[#2D3342] rounded text-slate-100 font-mono text-center text-xs focus:outline-none focus:border-amber-400"
+                                onChange={(e) => setMaxDelayMinutes(Number(e.target.value))}
+                                className="flex-1 accent-amber-400 cursor-pointer h-1.5 bg-slate-950 rounded-lg"
                               />
-                              <span className="text-[11px] text-slate-400">分</span>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={180}
+                                  value={maxDelayMinutes}
+                                  onChange={(e) => setMaxDelayMinutes(Math.max(1, Number(e.target.value) || 1))}
+                                  className="w-14 px-2 py-1 bg-slate-950 border border-slate-700 rounded-md text-slate-100 font-mono text-center text-xs focus:outline-none focus:border-amber-400"
+                                />
+                                <span className="text-[11px] text-slate-400">分</span>
+                              </div>
+                            </div>
+
+                            {/* Delay Preset Chips */}
+                            <div className="flex flex-wrap gap-1 items-center pt-0.5">
+                              <span className="text-[10px] text-slate-400 mr-1 font-medium">クイック選択:</span>
+                              {[5, 10, 15, 20, 30, 45, 60].map((mins) => (
+                                <button
+                                  key={mins}
+                                  onClick={() => setMaxDelayMinutes(mins)}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors cursor-pointer ${
+                                    maxDelayMinutes === mins
+                                      ? 'bg-amber-400 text-slate-950 font-bold'
+                                      : 'bg-slate-800 text-slate-300 hover:text-white border border-slate-700'
+                                  }`}
+                                >
+                                  {mins}分
+                                </button>
+                              ))}
                             </div>
                           </div>
+                        )}
 
-                          {/* Quick Presets */}
-                          <div className="flex flex-wrap gap-1 items-center">
-                            <span className="text-[10px] text-slate-500 mr-1">クイック設定:</span>
-                            {[5, 10, 15, 20, 30, 45, 60].map((mins) => (
+                        {/* ========================================================
+                            FLEXIBLE IMPACT SECTION SETTING (Express Ticket Dropdown Style)
+                            ======================================================== */}
+                        <div className="space-y-2 bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/80">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-slate-200 font-semibold flex items-center gap-1.5">
+                              <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                              <span>影響区間設定 (駅プルダウン選択 & 柔軟指定)</span>
+                            </span>
+                            <span className="text-[10px] text-indigo-300 font-mono">
+                              {currentLineDef.name} ({currentStations.length}駅)
+                            </span>
+                          </div>
+
+                          {/* Section Mode Pills */}
+                          <div className="flex flex-wrap gap-1">
+                            {[
+                              { mode: 'all', label: '全線' },
+                              { mode: 'station_pair', label: '駅間指定 (プルダウン)' },
+                              { mode: 'direction_up', label: '上り線のみ' },
+                              { mode: 'direction_down', label: '下り線のみ' },
+                              { mode: 'custom', label: '自由入力' },
+                            ].map((m) => (
                               <button
-                                key={mins}
-                                onClick={() => setMaxDelayMinutes(mins)}
-                                className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors cursor-pointer ${
-                                  maxDelayMinutes === mins
-                                    ? 'bg-amber-500 text-slate-950 font-bold'
-                                    : 'bg-[#1A1D24] text-slate-400 hover:text-slate-200 border border-[#2D3342]'
+                                key={m.mode}
+                                onClick={() =>
+                                  handleSectionModeChange(
+                                    m.mode as 'all' | 'station_pair' | 'direction_up' | 'direction_down' | 'custom'
+                                  )
+                                }
+                                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer border ${
+                                  sectionMode === m.mode
+                                    ? 'bg-indigo-600 text-white border-indigo-400 font-bold shadow-xs'
+                                    : 'bg-slate-800 text-slate-300 hover:text-white border-slate-700'
                                 }`}
                               >
-                                {mins}分
+                                {m.label}
                               </button>
                             ))}
                           </div>
-                        </div>
-                      )}
-                    </div>
 
-                    {/* Step 3: Section & Reason & Duration */}
-                    {disruptionStatusType !== 'normal' && (
-                      <div className="p-3 bg-[#212631] rounded-xl border border-[#2D3342] space-y-2.5">
-                        <label className="text-slate-300 font-semibold text-xs flex items-center gap-1.5">
-                          <span className="w-4 h-4 rounded-full bg-slate-700 text-slate-300 text-[10px] flex items-center justify-center font-bold">3</span>
-                          <span>影響区間・理由・いつまで（見込み時間）</span>
-                        </label>
+                          {/* Express Ticket Style Dual Dropdowns */}
+                          {sectionMode === 'station_pair' && (
+                            <div className="p-2.5 bg-slate-950/80 rounded-lg border border-slate-700 space-y-2">
+                              <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                                <span>乗車駅選択と同様のプルダウンで起点・終点を柔軟指定:</span>
+                              </div>
 
-                        {/* Section Selection */}
-                        <div className="space-y-1">
-                          <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                            <MapPin className="w-3 h-3 text-slate-400" />
-                            <span>影響区間 (何駅から何駅間)</span>
-                          </span>
-                          <input
-                            type="text"
-                            value={section}
-                            onChange={(e) => setSection(e.target.value)}
-                            placeholder="例: 全線、上り線のみ、大宮 〜 横浜 間"
-                            className="w-full px-2.5 py-1.5 bg-[#1A1D24] border border-[#2D3342] rounded-lg text-slate-100 text-xs focus:outline-none focus:border-amber-400"
-                          />
+                              <div className="flex items-center gap-2">
+                                {/* From Station Dropdown */}
+                                <div className="flex-1 space-y-1">
+                                  <label className="text-[10px] text-slate-400 font-medium block">
+                                    起点駅 (From)
+                                  </label>
+                                  <div className="relative">
+                                    <select
+                                      value={fromStation}
+                                      onChange={(e) => handleFromStationChange(e.target.value)}
+                                      className="w-full pl-2.5 pr-6 py-1.5 bg-slate-900 border border-slate-700 rounded-md text-slate-100 text-xs font-medium focus:outline-none focus:border-amber-400 cursor-pointer appearance-none"
+                                    >
+                                      {currentStations.map((stn, idx) => (
+                                        <option key={stn} value={stn}>
+                                          {idx + 1}. {stn}駅
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-2 pointer-events-none" />
+                                  </div>
+                                </div>
+
+                                {/* Swap Button */}
+                                <div className="pt-4 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={handleSwapStations}
+                                    className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 rounded-md text-xs transition-colors cursor-pointer flex items-center justify-center"
+                                    title="起点駅と終点駅を入れ替え"
+                                  >
+                                    <ArrowLeftRight className="w-4 h-4 text-amber-400" />
+                                  </button>
+                                </div>
+
+                                {/* To Station Dropdown */}
+                                <div className="flex-1 space-y-1">
+                                  <label className="text-[10px] text-slate-400 font-medium block">
+                                    終点駅 (To)
+                                  </label>
+                                  <div className="relative">
+                                    <select
+                                      value={toStation}
+                                      onChange={(e) => handleToStationChange(e.target.value)}
+                                      className="w-full pl-2.5 pr-6 py-1.5 bg-slate-900 border border-slate-700 rounded-md text-slate-100 text-xs font-medium focus:outline-none focus:border-amber-400 cursor-pointer appearance-none"
+                                    >
+                                      {currentStations.map((stn, idx) => (
+                                        <option key={stn} value={stn}>
+                                          {idx + 1}. {stn}駅
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 top-2 pointer-events-none" />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Computed Section Output / Direct Editable Input */}
+                          <div className="space-y-1 pt-1">
+                            <span className="text-[10px] text-slate-400 font-medium block">
+                              反映される影響区間テキスト:
+                            </span>
+                            <input
+                              type="text"
+                              value={section}
+                              onChange={(e) => {
+                                setSection(e.target.value);
+                                if (sectionMode !== 'custom' && sectionMode !== 'station_pair') {
+                                  setSectionMode('custom');
+                                }
+                              }}
+                              placeholder="例: 全線、大宮 〜 横浜 間、上り線のみ"
+                              className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-slate-100 text-xs font-medium focus:outline-none focus:border-amber-400"
+                            />
+                          </div>
+
+                          {/* Quick Common Section Presets for current line */}
                           <div className="flex flex-wrap gap-1 pt-0.5">
-                            {['全線', '上り線のみ', '下り線のみ', ...(COMMON_SECTIONS[selectedLineId] || [])].map((sec) => (
+                            <span className="text-[10px] text-slate-400 mr-1 font-medium">主要区間:</span>
+                            {(COMMON_SECTIONS[selectedLineId] || ['全線']).map((sec) => (
                               <button
                                 key={sec}
-                                onClick={() => setSection(sec)}
+                                onClick={() => {
+                                  setSection(sec);
+                                  if (sec === '全線') setSectionMode('all');
+                                  else if (sec.includes('〜')) setSectionMode('station_pair');
+                                  else setSectionMode('custom');
+                                }}
                                 className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
                                   section === sec
-                                    ? 'bg-[#374151] text-amber-300 border border-amber-400/40 font-medium'
-                                    : 'bg-[#1A1D24] text-slate-400 hover:text-slate-200 border border-[#2D3342]'
+                                    ? 'bg-slate-700 text-amber-300 border border-amber-400/50 font-bold'
+                                    : 'bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700'
                                 }`}
                               >
                                 {sec}
@@ -918,9 +1127,9 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                         </div>
 
                         {/* Reason Selection */}
-                        <div className="space-y-1 pt-1 border-t border-[#2D3342]">
-                          <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                            <AlertCircle className="w-3 h-3 text-slate-400" />
+                        <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/80">
+                          <span className="text-[11px] text-slate-200 font-semibold flex items-center gap-1.5">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
                             <span>発生理由</span>
                           </span>
                           <input
@@ -928,7 +1137,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                             value={reason}
                             onChange={(e) => setReason(e.target.value)}
                             placeholder="例: 車両点検のため、人身事故のため"
-                            className="w-full px-2.5 py-1.5 bg-[#1A1D24] border border-[#2D3342] rounded-lg text-slate-100 text-xs focus:outline-none focus:border-amber-400"
+                            className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-slate-100 text-xs font-medium focus:outline-none focus:border-amber-400"
                           />
                           <div className="flex flex-wrap gap-1 pt-0.5">
                             {COMMON_REASONS.map((r) => (
@@ -937,8 +1146,8 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                                 onClick={() => setReason(r)}
                                 className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
                                   reason === r
-                                    ? 'bg-[#374151] text-amber-300 border border-amber-400/40 font-medium'
-                                    : 'bg-[#1A1D24] text-slate-400 hover:text-slate-200 border border-[#2D3342]'
+                                    ? 'bg-slate-700 text-amber-300 border border-amber-400/50 font-bold'
+                                    : 'bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700'
                                 }`}
                               >
                                 {r}
@@ -948,46 +1157,50 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                         </div>
 
                         {/* Duration / Until */}
-                        <div className="space-y-1 pt-1 border-t border-[#2D3342]">
-                          <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                            <Clock3 className="w-3 h-3 text-slate-400" />
-                            <span>いつまで（復旧見込み時間・時間設定）</span>
+                        <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/80">
+                          <span className="text-[11px] text-slate-200 font-semibold flex items-center gap-1.5">
+                            <Clock3 className="w-3.5 h-3.5 text-amber-400" />
+                            <span>いつまで（復旧見込み時間）</span>
                           </span>
                           <input
                             type="text"
                             value={durationUntil}
                             onChange={(e) => setDurationUntil(e.target.value)}
                             placeholder="例: 18:30頃まで、1時間後、終日、復旧見込み立たず"
-                            className="w-full px-2.5 py-1.5 bg-[#1A1D24] border border-[#2D3342] rounded-lg text-slate-100 text-xs focus:outline-none focus:border-amber-400"
+                            className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-slate-100 text-xs font-medium focus:outline-none focus:border-amber-400"
                           />
                           <div className="flex flex-wrap gap-1 pt-0.5">
-                            {['設定なし', '15分後', '30分後', '1時間後', '18:30頃まで', '終日', '復旧見込み立たず'].map((dur) => (
-                              <button
-                                key={dur}
-                                onClick={() => setDurationUntil(dur === '設定なし' ? '' : dur)}
-                                className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
-                                  (dur === '設定なし' && !durationUntil) || durationUntil === dur
-                                    ? 'bg-[#374151] text-amber-300 border border-amber-400/40 font-medium'
-                                    : 'bg-[#1A1D24] text-slate-400 hover:text-slate-200 border border-[#2D3342]'
-                                }`}
-                              >
-                                {dur}
-                              </button>
-                            ))}
+                            {['設定なし', '15分後', '30分後', '1時間後', '18:30頃まで', '終日', '復旧見込み立たず'].map(
+                              (dur) => (
+                                <button
+                                  key={dur}
+                                  onClick={() => setDurationUntil(dur === '設定なし' ? '' : dur)}
+                                  className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
+                                    (dur === '設定なし' && !durationUntil) || durationUntil === dur
+                                      ? 'bg-slate-700 text-amber-300 border border-amber-400/50 font-bold'
+                                      : 'bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700'
+                                  }`}
+                                >
+                                  {dur}
+                                </button>
+                              )
+                            )}
                           </div>
                         </div>
                       </div>
                     )}
 
-                    {/* Step 4: Official Announcement Text Output & Customization */}
-                    {disruptionStatusType !== 'normal' && (
-                      <div className="p-3 bg-[#212631] rounded-xl border border-[#2D3342] space-y-2">
-                        <div className="flex items-center justify-between">
-                          <label className="text-slate-300 font-semibold text-xs flex items-center gap-1.5">
-                            <span className="w-4 h-4 rounded-full bg-slate-700 text-slate-300 text-[10px] flex items-center justify-center font-bold">4</span>
-                            <span>公式アナウンス文言（自動生成 & 自由編集）</span>
-                          </label>
+                    {/* Step 3: Official Announcement Preview & Dispatch Action */}
+                    <div className="p-3 bg-slate-800/90 rounded-xl border border-slate-700 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-slate-100 font-bold text-xs flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded-full bg-slate-700 text-slate-200 text-[10px] flex items-center justify-center font-bold">
+                            3
+                          </span>
+                          <span>公式アナウンス・システム連動と発令</span>
+                        </label>
 
+                        {disruptionStatusType !== 'normal' && (
                           <button
                             type="button"
                             onClick={() => {
@@ -996,152 +1209,139 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                               }
                               setUseCustomMessage(!useCustomMessage);
                             }}
-                            className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer border ${
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors cursor-pointer border ${
                               useCustomMessage
-                                ? 'bg-indigo-500/20 text-indigo-300 border-indigo-400/40'
-                                : 'bg-[#1A1D24] text-slate-400 hover:text-slate-200 border-[#2D3342]'
+                                ? 'bg-indigo-600/30 text-indigo-300 border-indigo-400'
+                                : 'bg-slate-800 text-slate-400 hover:text-slate-200 border-slate-700'
                             }`}
                           >
-                            {useCustomMessage ? '✏️ 自由入力モード中' : '🔄 自動生成モード中 (切替)'}
+                            {useCustomMessage ? '✏️ 自由入力中' : '🔄 自動生成モード (切替)'}
                           </button>
-                        </div>
-
-                        {useCustomMessage ? (
-                          <div className="space-y-1">
-                            <textarea
-                              rows={3}
-                              value={customMessage}
-                              onChange={(e) => setCustomMessage(e.target.value)}
-                              placeholder="独自の遅延・運休アナウンス文言を入力してください"
-                              className="w-full p-2 bg-[#1A1D24] border border-[#2D3342] rounded-lg text-slate-100 text-xs focus:outline-none focus:border-amber-400 resize-none font-sans leading-relaxed"
-                            />
-                            <p className="text-[10px] text-indigo-300 flex items-center gap-1">
-                              <span>💡 自分で考えた文言をそのまま運行情報カードに掲示します。</span>
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="p-2.5 bg-[#171922] rounded-lg border border-[#2B303C] space-y-1">
-                            <span className="text-[10px] text-slate-400 block font-mono">
-                              自動生成プレビュー:
-                            </span>
-                            <p className="text-slate-200 text-xs leading-relaxed font-sans select-all">
-                              {generatedPreview}
-                            </p>
-                          </div>
                         )}
                       </div>
-                    )}
 
-                    {/* Step 5: System Delay Linkage Switch */}
-                    <div className="p-3 bg-[#212631] rounded-xl border border-[#2D3342] space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-slate-300 font-semibold text-xs flex items-center gap-1.5">
-                          <span className="w-4 h-4 rounded-full bg-slate-700 text-slate-300 text-[10px] flex items-center justify-center font-bold">5</span>
-                          <span>システム連動設定（走行位置・発車案内）</span>
-                        </label>
-
-                        <button
-                          type="button"
-                          onClick={() => setLinkToSystem(!linkToSystem)}
-                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer ${
-                            linkToSystem ? 'bg-amber-500' : 'bg-slate-700'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                              linkToSystem ? 'translate-x-4.5' : 'translate-x-1'
-                            }`}
-                          />
-                        </button>
-                      </div>
-
-                      <div className="p-2 bg-[#1A1D24] rounded-lg border border-[#2D3342] space-y-1 text-[11px] text-slate-300">
-                        <div className="flex items-center gap-1.5 font-medium">
-                          {linkToSystem ? (
-                            <span className="text-amber-400 flex items-center gap-1">
-                              <Zap className="w-3.5 h-3.5" />
-                              <span>システム完全連動: ON</span>
-                            </span>
+                      {disruptionStatusType !== 'normal' && (
+                        <>
+                          {useCustomMessage ? (
+                            <div className="space-y-1">
+                              <textarea
+                                rows={2}
+                                value={customMessage}
+                                onChange={(e) => setCustomMessage(e.target.value)}
+                                placeholder="独自の遅延・運休アナウンス文言を入力してください"
+                                className="w-full p-2 bg-slate-950 border border-slate-700 rounded-md text-slate-100 text-xs focus:outline-none focus:border-amber-400 resize-none font-sans leading-relaxed"
+                              />
+                            </div>
                           ) : (
-                            <span className="text-slate-400 flex items-center gap-1">
-                              <AlertCircle className="w-3.5 h-3.5" />
-                              <span>文言表示のみ (システム遅延連動: OFF)</span>
-                            </span>
+                            <div className="p-2 bg-slate-950 rounded-md border border-slate-700/80 space-y-1">
+                              <span className="text-[10px] text-slate-400 block font-mono">
+                                📢 公式アナウンス自動プレビュー:
+                              </span>
+                              <p className="text-slate-200 text-xs leading-relaxed font-sans select-all">
+                                {generatedPreview}
+                              </p>
+                            </div>
                           )}
-                        </div>
-                        <p className="text-[10px] text-slate-400 leading-relaxed">
-                          {linkToSystem
-                            ? 'ホーム画面の運行情報カード、リアルタイム列車走行位置（1〜最大値の乱数遅延）、発車標に遅延/運休を即時連動します。'
-                            : '運行情報カードへのアナウンス文言掲示のみ行い、走行位置の乱数遅延や発車標の遅延表記は行いません。'}
-                        </p>
+
+                          {/* System Linkage Toggle */}
+                          <div className="p-2 bg-slate-950/60 rounded-md border border-slate-700 flex items-center justify-between">
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-1 text-[11px] font-bold text-slate-200">
+                                <Zap className="w-3.5 h-3.5 text-amber-400" />
+                                <span>走行位置・発車案内への遅延連動</span>
+                              </div>
+                              <p className="text-[10px] text-slate-400">
+                                {linkToSystem
+                                  ? 'ホーム画面・走行位置・発車標のすべてに遅延・運休を即時連動します'
+                                  : '運行情報カードへの文言掲示のみ行い、ダイヤへの遅延加算は行いません'}
+                              </p>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => setLinkToSystem(!linkToSystem)}
+                              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer shrink-0 ${
+                                linkToSystem ? 'bg-amber-400' : 'bg-slate-700'
+                              }`}
+                            >
+                              <span
+                                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-slate-950 transition-transform ${
+                                  linkToSystem ? 'translate-x-4.5' : 'translate-x-1'
+                                }`}
+                              />
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      {/* Dispatch & Clear Action Buttons */}
+                      <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                        {disruptionStatusType === 'normal' ? (
+                          <button
+                            onClick={() => handleClearLineDisruption()}
+                            className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
+                          >
+                            <Check className="w-4 h-4" />
+                            <span>{currentLineDef.name} を平常運転に設定・反映</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={handleDispatchDisruption}
+                            className="flex-1 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
+                          >
+                            <Zap className="w-4 h-4 fill-slate-950" />
+                            <span>【運行指令発令】{currentLineDef.name} に反映する</span>
+                          </button>
+                        )}
+
+                        {activeDisruptionsMap[selectedLineId] && disruptionStatusType !== 'normal' && (
+                          <button
+                            onClick={() => handleClearLineDisruption()}
+                            className="py-2.5 px-3 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl font-medium text-xs transition-colors cursor-pointer flex items-center justify-center gap-1"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>この路線の支障を解除</span>
+                          </button>
+                        )}
                       </div>
                     </div>
 
-                    {/* Step 6: Dispatch & Reset Action Buttons */}
-                    <div className="flex flex-col sm:flex-row gap-2 pt-1">
-                      {disruptionStatusType === 'normal' ? (
-                        <button
-                          onClick={() => handleClearLineDisruption()}
-                          className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
-                        >
-                          <Check className="w-4 h-4" />
-                          <span>{currentLineDef.name} を平常運転に設定・反映</span>
-                        </button>
-                      ) : (
-                        <button
-                          onClick={handleDispatchDisruption}
-                          className="flex-1 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
-                        >
-                          <Zap className="w-4 h-4 fill-slate-950" />
-                          <span>【運行指令発令】{currentLineDef.name} に反映する</span>
-                        </button>
-                      )}
-
-                      {activeDisruptionsMap[selectedLineId] && disruptionStatusType !== 'normal' && (
-                        <button
-                          onClick={() => handleClearLineDisruption()}
-                          className="py-2.5 px-3 bg-[#2D3342] hover:bg-[#384052] text-slate-300 rounded-xl font-medium text-xs transition-colors cursor-pointer flex items-center justify-center gap-1"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          <span>この路線の支障を解除</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Active Disruptions Card List */}
-                    <div className="pt-2 border-t border-[#2D3342] space-y-2">
+                    {/* Active Disruptions Summary List */}
+                    <div className="pt-2 border-t border-slate-700 space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="font-semibold text-xs text-slate-300">
+                        <span className="font-bold text-xs text-slate-200">
                           現在発令中の運行支障一覧
                         </span>
-                        <span className="text-[10px] text-slate-400 font-mono">
+                        <span className="text-[10px] text-slate-400 font-mono font-bold">
                           {activeDisruptionCount}件 発令中
                         </span>
                       </div>
 
                       {activeDisruptionCount === 0 ? (
-                        <div className="p-3 bg-[#1A1D24] rounded-lg border border-[#2D3342] text-center text-slate-400 text-xs">
-                          現在発令中の遅延・運休指令はありません（全線平常運行）
+                        <div className="p-3 bg-slate-800/80 rounded-lg border border-slate-700 text-center text-slate-400 text-xs">
+                          現在発令中の遅延・運休指令はありません（全線平常運行中）
                         </div>
                       ) : (
                         <div className="space-y-1.5">
                           {(Object.values(activeDisruptionsMap) as LineDisruption[]).map((dis: LineDisruption) => (
                             <div
                               key={dis.lineId}
-                              className="p-2.5 bg-[#1F232E] rounded-lg border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                              className="p-2.5 bg-slate-800/90 rounded-lg border border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
                             >
                               <div className="space-y-1 min-w-0">
                                 <div className="flex items-center gap-2">
                                   <span className="font-bold text-slate-100 text-xs">
                                     {dis.lineName}
                                   </span>
-                                  <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
-                                    dis.statusType === 'suspended'
-                                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                                      : dis.statusType === 'partially_suspended'
-                                      ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40'
-                                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                                  }`}>
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                      dis.statusType === 'suspended'
+                                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                                        : dis.statusType === 'partially_suspended'
+                                        ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40'
+                                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                    }`}
+                                  >
                                     {dis.statusType === 'suspended'
                                       ? '運転見合わせ'
                                       : dis.statusType === 'partially_suspended'
@@ -1149,7 +1349,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                                       : `遅延(最大${dis.maxDelayMinutes}分)`}
                                   </span>
                                   {dis.linkToSystem && (
-                                    <span className="px-1 py-0.2 bg-indigo-500/20 text-indigo-300 text-[9px] rounded font-mono">
+                                    <span className="px-1 py-0.2 bg-indigo-500/20 text-indigo-300 text-[9px] rounded font-mono font-bold">
                                       システム連動中
                                     </span>
                                   )}
@@ -1165,13 +1365,13 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                               <div className="flex items-center gap-1.5 shrink-0">
                                 <button
                                   onClick={() => loadLineConfig(dis.lineId)}
-                                  className="px-2 py-1 bg-[#2D3342] hover:bg-[#384052] text-slate-200 rounded text-[10px] transition-colors cursor-pointer"
+                                  className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-[10px] font-medium transition-colors cursor-pointer"
                                 >
                                   編集
                                 </button>
                                 <button
                                   onClick={() => handleClearLineDisruption(dis.lineId)}
-                                  className="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 rounded text-[10px] transition-colors cursor-pointer"
+                                  className="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded text-[10px] font-medium transition-colors cursor-pointer"
                                 >
                                   解除
                                 </button>
@@ -1186,18 +1386,18 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
               })()}
 
               {/* ========================================================
-                  TAB 1: Metrics & System Health
+                  TAB 1: システム診断 (Diagnostics & Integrity & Emergency Tools)
                   ======================================================== */}
-              {activeTab === 'metrics' && metrics && (
+              {activeTab === 'diagnostics' && (
                 <div className="space-y-3">
                   {/* Status Banner */}
-                  <div className="p-2.5 rounded-xl bg-[#212631] border border-[#2D3342] flex items-center justify-between">
+                  <div className="p-2.5 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                      <div className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
                         <CheckCircle2 className="w-4 h-4" />
                       </div>
                       <div>
-                        <div className="font-semibold text-slate-200 text-xs flex items-center gap-1.5">
+                        <div className="font-bold text-slate-100 text-xs flex items-center gap-1.5">
                           <span>運行管理システム正常稼働</span>
                           <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" />
                         </div>
@@ -1209,7 +1409,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
 
                     <button
                       onClick={() => setMetrics(systemLogger.getMetrics())}
-                      className="px-2 py-1 bg-[#2D3342] hover:bg-[#384052] text-slate-300 rounded text-[10px] flex items-center gap-1 cursor-pointer transition-colors"
+                      className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-[10px] font-medium flex items-center gap-1 cursor-pointer transition-colors"
                     >
                       <RefreshCw className="w-3 h-3" />
                       <span>更新</span>
@@ -1217,126 +1417,91 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                   </div>
 
                   {/* Environment Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    <div className="p-2 bg-[#212631] rounded-lg border border-[#2D3342] space-y-0.5">
-                      <span className="text-[10px] text-slate-400 block">バージョン</span>
-                      <span className="font-mono text-slate-200 text-xs font-semibold">
-                        {metrics.appVersion}
-                      </span>
-                    </div>
-
-                    <div className="p-2 bg-[#212631] rounded-lg border border-[#2D3342] space-y-0.5">
-                      <span className="text-[10px] text-slate-400 block">動作モード</span>
-                      <span className="font-mono text-slate-200 text-xs">{metrics.environment}</span>
-                    </div>
-
-                    <div className="p-2 bg-[#212631] rounded-lg border border-[#2D3342] space-y-0.5">
-                      <span className="text-[10px] text-slate-400 block">端末</span>
-                      <span className="text-slate-200 text-xs flex items-center gap-1">
-                        <span>{metrics.deviceType}</span>
-                        {metrics.isStandalone && (
-                          <span className="px-1 py-0.1 bg-indigo-500/20 text-indigo-300 text-[9px] rounded">
-                            PWA
-                          </span>
-                        )}
-                      </span>
-                    </div>
-
-                    <div className="p-2 bg-[#212631] rounded-lg border border-[#2D3342] space-y-0.5">
-                      <span className="text-[10px] text-slate-400 block">画面解像度</span>
-                      <span className="font-mono text-slate-200 text-xs">
-                        {metrics.screenWidth}×{metrics.screenHeight} ({metrics.pixelRatio}x)
-                      </span>
-                    </div>
-
-                    <div className="p-2 bg-[#212631] rounded-lg border border-[#2D3342] space-y-0.5">
-                      <span className="text-[10px] text-slate-400 block">接続状態</span>
-                      <span
-                        className={`text-xs font-medium ${
-                          metrics.onlineStatus ? 'text-emerald-400' : 'text-rose-400'
-                        }`}
-                      >
-                        {metrics.onlineStatus ? 'Online' : 'Offline'}
-                      </span>
-                    </div>
-
-                    <div className="p-2 bg-[#212631] rounded-lg border border-[#2D3342] space-y-0.5">
-                      <span className="text-[10px] text-slate-400 block">通知権限</span>
-                      <span
-                        className={`text-xs font-mono ${
-                          metrics.notificationPermission === 'granted'
-                            ? 'text-emerald-400'
-                            : 'text-slate-400'
-                        }`}
-                      >
-                        {metrics.notificationPermission}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Route Status Summary */}
-                  <div className="p-2.5 bg-[#212631] rounded-xl border border-[#2D3342] space-y-1.5">
-                    <div className="font-semibold text-slate-200 text-xs flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <Layers className="w-3.5 h-3.5 text-slate-400" />
-                        <span>路線停車駅・運行定義</span>
-                      </span>
-                      <span className="text-[10px] text-emerald-400 font-mono">整合性確認済</span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-                      <div className="p-1.5 bg-[#1A1D24] rounded border border-[#2D3342] flex justify-between items-center">
-                        <span className="text-slate-400">神埼線 (Y)</span>
-                        <span className="text-slate-200 font-mono">20駅</span>
+                  {metrics && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      <div className="p-2 bg-slate-800 rounded-lg border border-slate-700 space-y-0.5">
+                        <span className="text-[10px] text-slate-400 block">バージョン</span>
+                        <span className="font-mono text-slate-200 text-xs font-bold">
+                          {metrics.appVersion}
+                        </span>
                       </div>
-                      <div className="p-1.5 bg-[#1A1D24] rounded border border-[#2D3342] flex justify-between items-center">
-                        <span className="text-slate-400">神埼高速線 (NI)</span>
-                        <span className="text-slate-200 font-mono">6駅</span>
+
+                      <div className="p-2 bg-slate-800 rounded-lg border border-slate-700 space-y-0.5">
+                        <span className="text-[10px] text-slate-400 block">動作環境</span>
+                        <span className="font-mono text-slate-200 text-xs">{metrics.environment}</span>
                       </div>
-                      <div className="p-1.5 bg-[#1A1D24] rounded border border-[#2D3342] flex justify-between items-center">
-                        <span className="text-slate-400">埼千環状線 (SC)</span>
-                        <span className="text-slate-200 font-mono">12駅</span>
+
+                      <div className="p-2 bg-slate-800 rounded-lg border border-slate-700 space-y-0.5">
+                        <span className="text-[10px] text-slate-400 block">端末</span>
+                        <span className="text-slate-200 text-xs flex items-center gap-1">
+                          <span>{metrics.deviceType}</span>
+                          {metrics.isStandalone && (
+                            <span className="px-1 py-0.1 bg-indigo-500/20 text-indigo-300 text-[9px] rounded font-bold">
+                              PWA
+                            </span>
+                          )}
+                        </span>
                       </div>
-                      <div className="p-1.5 bg-[#1A1D24] rounded border border-[#2D3342] flex justify-between items-center">
-                        <span className="text-slate-400">土浦線 (TC)</span>
-                        <span className="text-slate-200 font-mono">22駅 (大甕設定済)</span>
+
+                      <div className="p-2 bg-slate-800 rounded-lg border border-slate-700 space-y-0.5">
+                        <span className="text-[10px] text-slate-400 block">画面解像度</span>
+                        <span className="font-mono text-slate-200 text-xs">
+                          {metrics.screenWidth}×{metrics.screenHeight} ({metrics.pixelRatio}x)
+                        </span>
+                      </div>
+
+                      <div className="p-2 bg-slate-800 rounded-lg border border-slate-700 space-y-0.5">
+                        <span className="text-[10px] text-slate-400 block">接続状態</span>
+                        <span
+                          className={`text-xs font-semibold ${
+                            metrics.onlineStatus ? 'text-emerald-400' : 'text-rose-400'
+                          }`}
+                        >
+                          {metrics.onlineStatus ? 'Online' : 'Offline'}
+                        </span>
+                      </div>
+
+                      <div className="p-2 bg-slate-800 rounded-lg border border-slate-700 space-y-0.5">
+                        <span className="text-[10px] text-slate-400 block">通知権限</span>
+                        <span
+                          className={`text-xs font-mono font-semibold ${
+                            metrics.notificationPermission === 'granted'
+                              ? 'text-emerald-400'
+                              : 'text-slate-400'
+                          }`}
+                        >
+                          {metrics.notificationPermission}
+                        </span>
                       </div>
                     </div>
-                  </div>
-                </div>
-              )}
+                  )}
 
-              {/* ========================================================
-                  TAB 2: Emergency Response & Recovery Tools
-                  ======================================================== */}
-              {activeTab === 'emergency' && (
-                <div className="space-y-3">
-                  {/* Emergency Quick Actions Card */}
-                  <div className="p-3 bg-[#212631] rounded-xl border border-[#2D3342] space-y-2.5">
+                  {/* Integrity Audit Card */}
+                  <div className="p-3 bg-slate-800/90 rounded-xl border border-slate-700 space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <div className="font-semibold text-slate-200 text-xs flex items-center gap-1.5">
+                      <div className="font-bold text-slate-100 text-xs flex items-center gap-1.5">
                         <FileCheck className="w-3.5 h-3.5 text-indigo-400" />
                         <span>全系統 整合性監査 (Integrity Audit)</span>
                       </div>
                       <button
                         onClick={handleRunAudit}
                         disabled={isAuditing}
-                        className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                        className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer shadow-xs"
                       >
                         <RefreshCw className={`w-3 h-3 ${isAuditing ? 'animate-spin' : ''}`} />
                         <span>{isAuditing ? '監査中...' : '監査を実行'}</span>
                       </button>
                     </div>
                     <p className="text-[11px] text-slate-400 leading-relaxed">
-                      全4路線の駅マスタ、停車駅パターン、土浦線大甕駅の停車フラグ、ストレージ整合性を一括自動監査します。
+                      全4路線の駅マスタ、停車駅パターン、大甕駅の停車フラグ、ストレージ整合性を一括自動監査します。
                     </p>
 
                     {auditResult && (
-                      <div className="p-2 bg-[#1A1D24] border border-[#2D3342] rounded-lg space-y-1 text-[11px]">
+                      <div className="p-2.5 bg-slate-900 border border-slate-700 rounded-lg space-y-1 text-[11px]">
                         <div className="flex items-center justify-between">
                           <span className="text-slate-400">監査判定:</span>
                           <span
-                            className={`font-semibold font-mono ${
+                            className={`font-bold font-mono ${
                               auditResult.status === 'passed' ? 'text-emerald-400' : 'text-amber-400'
                             }`}
                           >
@@ -1349,63 +1514,56 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                             {auditResult.totalStationsChecked}駅 / {auditResult.linesChecked}路線
                           </span>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-400">監査時刻:</span>
-                          <span className="text-slate-400 font-mono">{auditResult.timestamp}</span>
-                        </div>
                       </div>
                     )}
                   </div>
 
-                  {/* Cache & Recovery Card */}
-                  <div className="p-3 bg-[#212631] rounded-xl border border-[#2D3342] space-y-2.5">
-                    <div className="font-semibold text-slate-200 text-xs flex items-center gap-1.5">
+                  {/* Cache & Emergency Resync */}
+                  <div className="p-3 bg-slate-800/90 rounded-xl border border-slate-700 space-y-2">
+                    <div className="font-bold text-slate-100 text-xs flex items-center gap-1.5">
                       <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
-                      <span>緊急時データ再同期・一時キャッシュパージ</span>
+                      <span>一時キャッシュパージ & 運行データ再同期</span>
                     </div>
                     <p className="text-[11px] text-slate-400 leading-relaxed">
-                      ダイヤ乱れや表示不整合が発生した際、ユーザーの会員情報やN-POINT残高を保持したまま、運行データ・時刻表キャッシュのみを安全に最新状態へ再構成します。
+                      会員情報やポイント残高を保持したまま、運行データおよび時刻表キャッシュを安全に再構築します。
                     </p>
                     <button
                       onClick={handleEmergencyResync}
-                      className="w-full py-2 bg-[#252B38] hover:bg-[#2F3647] border border-[#333B4C] text-slate-200 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      className="w-full py-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-100 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                     >
                       <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
                       <span>運行データ再同期を実行</span>
                     </button>
                   </div>
 
-                  {/* Emergency Broadcast Banner Override */}
-                  <div className="p-3 bg-[#212631] rounded-xl border border-[#2D3342] space-y-2.5">
-                    <div className="font-semibold text-slate-200 text-xs flex items-center justify-between">
+                  {/* Emergency Broadcast Override */}
+                  <div className="p-3 bg-slate-800/90 rounded-xl border border-slate-700 space-y-2">
+                    <div className="font-bold text-slate-100 text-xs flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
                         <Radio className="w-3.5 h-3.5 text-rose-400" />
                         <span>緊急運行速報 手動発令 / 解除</span>
                       </span>
                       {emergencyAlertActive && (
-                        <span className="px-1.5 py-0.2 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded text-[9px] font-medium">
+                        <span className="px-1.5 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 rounded text-[10px] font-bold">
                           発令中
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      大雨・強風・人身事故等の緊急時に、アプリ全体に即時配信する緊急速報メッセージを設定します。
-                    </p>
 
-                    <div className="space-y-2">
+                    <div className="space-y-1.5">
                       <input
                         type="text"
                         placeholder="例: 強風のため全線で運転を見合わせております"
                         value={emergencyAlertText}
                         onChange={(e) => setEmergencyAlertText(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-[#1A1D24] border border-[#2D3342] rounded-lg text-slate-200 placeholder-slate-500 text-xs focus:outline-none focus:border-slate-400"
+                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-500 text-xs focus:outline-none focus:border-rose-400"
                       />
 
                       <div className="flex gap-2">
                         <button
                           onClick={handleSetEmergencyAlert}
                           disabled={!emergencyAlertText.trim()}
-                          className="flex-1 py-1.5 bg-rose-600/80 hover:bg-rose-600 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-center gap-1"
+                          className="flex-1 py-1.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1 shadow-xs"
                         >
                           <Radio className="w-3.5 h-3.5" />
                           <span>速報を発令</span>
@@ -1414,7 +1572,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                         {emergencyAlertActive && (
                           <button
                             onClick={handleClearEmergencyAlert}
-                            className="px-3 py-1.5 bg-[#252B38] hover:bg-[#2F3647] border border-[#333B4C] text-slate-300 rounded-lg text-xs transition-colors cursor-pointer"
+                            className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium transition-colors cursor-pointer"
                           >
                             解除
                           </button>
@@ -1426,22 +1584,21 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
               )}
 
               {/* ========================================================
-                  TAB 3: Error Logger & Live Event Stream
+                  TAB 2: エラーログ (Error Logs & Event Stream)
                   ======================================================== */}
               {activeTab === 'errors' && (
                 <div className="space-y-2.5">
                   {/* Controls Bar */}
-                  <div className="flex flex-wrap items-center justify-between gap-1.5 p-2 bg-[#212631] rounded-lg border border-[#2D3342]">
-                    {/* Filters */}
+                  <div className="flex flex-wrap items-center justify-between gap-1.5 p-2 bg-slate-800 rounded-lg border border-slate-700">
                     <div className="flex items-center gap-1">
                       {(['all', 'error', 'warn', 'info'] as const).map((lvl) => (
                         <button
                           key={lvl}
                           onClick={() => setLogFilter(lvl)}
-                          className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer ${
+                          className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
                             logFilter === lvl
-                              ? 'bg-slate-200 text-slate-900 font-semibold'
-                              : 'bg-[#1A1D24] text-slate-400 hover:text-slate-200'
+                              ? 'bg-slate-100 text-slate-900 shadow-xs'
+                              : 'bg-slate-900 text-slate-400 hover:text-slate-200'
                           }`}
                         >
                           {lvl === 'all'
@@ -1449,27 +1606,23 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                             : lvl === 'error'
                             ? `エラー (${errorCount})`
                             : lvl === 'warn'
-                            ? `警告 (${warnCount})`
+                            ? `警告`
                             : '情報'}
                         </button>
                       ))}
                     </div>
 
-                    {/* Actions */}
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
                       <button
                         onClick={handleCopyLogs}
-                        className="px-2 py-0.5 bg-[#2D3342] hover:bg-slate-700 text-slate-300 rounded text-[10px] flex items-center gap-1 transition-colors cursor-pointer"
-                        title="ログをコピー"
+                        className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
                       >
-                        {copiedText ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                        <span>{copiedText ? '完了' : 'コピー'}</span>
+                        <Copy className="w-3 h-3" />
+                        <span>{copiedText ? 'コピー完了' : 'コピー'}</span>
                       </button>
-
                       <button
                         onClick={handleClearLogs}
-                        className="px-2 py-0.5 bg-[#2D3342] hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 rounded text-[10px] flex items-center gap-1 transition-colors cursor-pointer"
-                        title="ログを消去"
+                        className="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded text-[11px] font-medium flex items-center gap-1 transition-colors cursor-pointer"
                       >
                         <Trash2 className="w-3 h-3" />
                         <span>消去</span>
@@ -1479,169 +1632,109 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
 
                   {/* Search Input */}
                   <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2" />
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
                     <input
                       type="text"
-                      placeholder="ログをキーワードで検索..."
+                      placeholder="ログ内を検索..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-8 pr-3 py-1.5 bg-[#212631] border border-[#2D3342] rounded-lg text-slate-200 placeholder-slate-500 text-xs focus:outline-none focus:border-slate-400"
+                      className="w-full pl-8 pr-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 text-xs focus:outline-none focus:border-indigo-400"
                     />
                   </div>
 
-                  {/* Logs List */}
-                  <div className="space-y-1.5 max-h-80 overflow-y-auto pr-0.5">
+                  {/* Log Entries List */}
+                  <div className="space-y-1.5 max-h-[340px] overflow-y-auto">
                     {filteredLogs.length === 0 ? (
-                      <div className="p-6 text-center bg-[#212631] rounded-xl border border-[#2D3342] space-y-1">
-                        <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto" />
-                        <p className="font-medium text-slate-200 text-xs">現在エラーログはありません</p>
-                        <p className="text-[10px] text-slate-400">
-                          エラーは検知されておらず、すべての運行・表示処理は正常に稼働しています。
-                        </p>
-                      </div>
+                      <div className="p-4 text-center text-slate-500 text-xs">該当するログはありません</div>
                     ) : (
-                      filteredLogs.map((log) => {
-                        const isExpanded = expandedLogId === log.id;
-                        const isError = log.level === 'error' || log.level === 'critical';
-                        const isWarn = log.level === 'warn';
-
-                        return (
-                          <div
-                            key={log.id}
-                            className="p-2 rounded-lg bg-[#212631] border border-[#2D3342] transition-colors"
-                          >
-                            <div
-                              onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
-                              className="flex items-start justify-between gap-2 cursor-pointer"
-                            >
-                              <div className="space-y-0.5 min-w-0">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span
-                                    className={`px-1.5 py-0.1 rounded text-[9px] font-mono font-medium uppercase ${
-                                      isError
-                                        ? 'bg-rose-500/15 text-rose-300 border border-rose-500/20'
-                                        : isWarn
-                                        ? 'bg-amber-500/15 text-amber-300 border border-amber-500/20'
-                                        : 'bg-slate-700 text-slate-300'
-                                    }`}
-                                  >
-                                    {log.level}
-                                  </span>
-                                  <span className="px-1 py-0.1 bg-[#1A1D24] text-slate-400 rounded text-[9px] font-mono">
-                                    {log.source}
-                                  </span>
-                                  <span className="text-[10px] text-slate-500 font-mono">
-                                    {log.timestamp}
-                                  </span>
-                                </div>
-                                <p className="text-xs font-mono text-slate-200 break-all leading-relaxed">
-                                  {log.message}
-                                </p>
-                              </div>
-
-                              <button className="text-slate-500 hover:text-slate-300 p-0.5 shrink-0">
-                                {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                              </button>
-                            </div>
-
-                            {/* Expanded Details / Stack */}
-                            {isExpanded && (log.details || log.stack) && (
-                              <div className="mt-2 pt-1.5 border-t border-[#2D3342] space-y-1 text-[10px] font-mono bg-[#1A1D24] p-2 rounded">
-                                {log.details && (
-                                  <div>
-                                    <span className="text-slate-500 block">詳細:</span>
-                                    <pre className="text-slate-300 whitespace-pre-wrap break-all">{log.details}</pre>
-                                  </div>
-                                )}
-                                {log.stack && (
-                                  <div>
-                                    <span className="text-slate-500 block">スタック:</span>
-                                    <pre className="text-rose-300/80 whitespace-pre-wrap break-all max-h-36 overflow-y-auto">
-                                      {log.stack}
-                                    </pre>
-                                  </div>
-                                )}
-                              </div>
-                            )}
+                      filteredLogs.map((log) => (
+                        <div
+                          key={log.id}
+                          className={`p-2 rounded-lg border text-xs font-mono space-y-0.5 ${
+                            log.level === 'error' || log.level === 'critical'
+                              ? 'bg-rose-950/30 border-rose-800/40 text-rose-200'
+                              : log.level === 'warn'
+                              ? 'bg-amber-950/20 border-amber-800/40 text-amber-200'
+                              : 'bg-slate-900/80 border-slate-700/80 text-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between text-[10px] text-slate-400">
+                            <span className="font-bold text-slate-300">[{log.source}]</span>
+                            <span>{new Date(log.timestamp).toLocaleTimeString('ja-JP')}</span>
                           </div>
-                        );
-                      })
+                          <p className="font-sans leading-relaxed text-[11px] text-slate-100">{log.message}</p>
+                          {log.details && (
+                            <pre className="text-[9px] text-slate-400 overflow-x-auto bg-black/40 p-1 rounded">
+                              {log.details}
+                            </pre>
+                          )}
+                        </div>
+                      ))
                     )}
                   </div>
                 </div>
               )}
 
               {/* ========================================================
-                  TAB 4: Raw LocalStorage Inspector & Safe Clearing
+                  TAB 3: ストレージ管理 (Storage Inspector & Safe Reset)
                   ======================================================== */}
-              {activeTab === 'storage' && metrics && (
-                <div className="space-y-2.5">
-                  <div className="p-2.5 bg-[#212631] rounded-xl border border-[#2D3342] flex items-center justify-between">
+              {activeTab === 'storage' && (
+                <div className="space-y-3">
+                  <div className="p-2.5 bg-slate-800 rounded-xl border border-slate-700 flex items-center justify-between">
                     <div>
-                      <div className="font-semibold text-slate-200 text-xs">LocalStorage 使用状況</div>
+                      <div className="font-bold text-xs text-slate-100">LocalStorage データ管理</div>
                       <p className="text-[10px] text-slate-400">
-                        合計 {metrics.storageKeysCount} キー / 約 {metrics.storageUsageKb} KB
+                        端末に保存された運行情報・会員データ・設定キーの一覧と検査
                       </p>
                     </div>
-
                     <button
                       onClick={() => setShowClearStorageConfirm(true)}
-                      className="px-2 py-1 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-300 rounded text-[10px] flex items-center gap-1 cursor-pointer transition-colors"
+                      className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer shadow-xs"
                     >
                       <Trash2 className="w-3 h-3" />
                       <span>全初期化</span>
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {/* 2-Column Storage Viewer */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 min-h-[300px]">
                     {/* Keys List */}
-                    <div className="space-y-1">
-                      <span className="text-[10px] text-slate-400 block font-medium">キー一覧</span>
-                      <div className="space-y-1 h-72 overflow-y-auto pr-1">
-                        {metrics.storageKeys.length === 0 ? (
-                          <p className="text-slate-500 p-2 bg-[#212631] rounded text-[11px]">キーが存在しません</p>
-                        ) : (
-                          metrics.storageKeys.map((key) => (
-                            <button
-                              key={key}
-                              onClick={() => handleInspectKey(key)}
-                              className={`w-full p-2 text-left rounded-lg font-mono text-[11px] flex items-center justify-between transition-colors cursor-pointer border ${
-                                selectedStorageKey === key
-                                  ? 'bg-[#31394B] text-slate-100 font-medium border-slate-500 shadow-xs'
-                                  : 'bg-[#212631] hover:bg-[#282F3E] text-slate-300 border-[#2D3342]'
-                              }`}
-                            >
-                              <span className="truncate">{key}</span>
-                              <ChevronRight className="w-3 h-3 shrink-0 text-slate-400" />
-                            </button>
-                          ))
-                        )}
-                      </div>
+                    <div className="bg-slate-900 border border-slate-700 rounded-lg p-2 space-y-1 max-h-[320px] overflow-y-auto">
+                      <span className="text-[10px] text-slate-400 font-bold block mb-1">保存キー一覧:</span>
+                      {Object.keys(localStorage).map((k) => (
+                        <button
+                          key={k}
+                          onClick={() => handleInspectKey(k)}
+                          className={`w-full text-left p-1.5 rounded text-[11px] font-mono truncate transition-colors cursor-pointer ${
+                            selectedStorageKey === k
+                              ? 'bg-indigo-600 text-white font-bold'
+                              : 'bg-slate-800/80 text-slate-300 hover:bg-slate-750'
+                          }`}
+                        >
+                          {k}
+                        </button>
+                      ))}
                     </div>
 
                     {/* Data Viewer */}
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-slate-400 font-medium">
-                          {selectedStorageKey ? `内容: ${selectedStorageKey}` : 'キーを選択'}
-                        </span>
-                        {selectedStorageKey && (
-                          <button
-                            onClick={() => handleDeleteStorageKey(selectedStorageKey)}
-                            className="text-rose-400 hover:text-rose-300 text-[10px] flex items-center gap-0.5 cursor-pointer"
-                          >
-                            <Trash2 className="w-2.5 h-2.5" />
-                            <span>削除</span>
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="p-2.5 bg-[#171922] border border-[#2D3342] rounded-lg h-72 overflow-y-auto font-mono text-[10px] text-emerald-400">
-                        {storageDataView ? (
-                          <pre className="whitespace-pre-wrap break-all">{storageDataView}</pre>
-                        ) : (
-                          <p className="text-slate-500">キーを選択すると内容が表示されます</p>
-                        )}
+                    <div className="bg-slate-900 border border-slate-700 rounded-lg p-2 flex flex-col justify-between max-h-[320px] overflow-hidden">
+                      <div className="space-y-1 overflow-y-auto flex-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-slate-400 font-bold">
+                            キー内容: {selectedStorageKey || '(未選択)'}
+                          </span>
+                          {selectedStorageKey && (
+                            <button
+                              onClick={() => handleDeleteStorageKey(selectedStorageKey)}
+                              className="text-rose-400 hover:text-rose-300 text-[10px] font-medium"
+                            >
+                              削除
+                            </button>
+                          )}
+                        </div>
+                        <pre className="text-[10px] text-slate-300 font-mono bg-black/40 p-2 rounded whitespace-pre-wrap overflow-x-auto">
+                          {storageDataView || '左のキーを選択すると内容を表示します'}
+                        </pre>
                       </div>
                     </div>
                   </div>
@@ -1649,51 +1742,51 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
               )}
 
               {/* ========================================================
-                  TAB 5: Admin Security Settings
+                  TAB 4: 管理者設定 (PIN & Security)
                   ======================================================== */}
               {activeTab === 'settings' && (
                 <div className="space-y-3">
-                  <div className="p-3 bg-[#212631] rounded-xl border border-[#2D3342] space-y-2.5">
-                    <div className="font-semibold text-slate-200 text-xs flex items-center gap-1.5">
-                      <KeyRound className="w-3.5 h-3.5 text-slate-400" />
+                  <div className="p-3.5 bg-slate-800 rounded-xl border border-slate-700 space-y-3">
+                    <div className="font-bold text-slate-100 text-xs flex items-center gap-1.5">
+                      <KeyRound className="w-4 h-4 text-amber-400" />
                       <span>管理者パスコード変更</span>
                     </div>
                     <p className="text-[11px] text-slate-400 leading-relaxed">
                       4桁の数字で新しい管理者パスコードを設定できます。変更後は旧パスコードや初期パスコードでは解錠できなくなります。
                     </p>
 
-                    <form onSubmit={handleChangePin} className="space-y-2 pt-0.5">
+                    <form onSubmit={handleChangePin} className="space-y-2 pt-1">
                       <div className="flex gap-2">
                         <input
                           type="password"
                           maxLength={4}
-                          placeholder="新PIN"
+                          placeholder="新PIN (4桁)"
                           value={newPinInput}
                           onChange={(e) => setNewPinInput(e.target.value.replace(/\D/g, ''))}
-                          className="w-28 px-2.5 py-1.5 bg-[#1A1D24] border border-[#2D3342] rounded-lg text-slate-100 font-mono text-center text-xs tracking-widest focus:outline-none focus:border-slate-400"
+                          className="w-32 px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 font-mono text-center text-xs tracking-widest focus:outline-none focus:border-amber-400"
                         />
                         <button
                           type="submit"
                           disabled={newPinInput.length !== 4}
-                          className="px-3 py-1.5 bg-[#31394B] hover:bg-[#3C465C] disabled:opacity-40 text-slate-100 text-xs rounded-lg transition-colors cursor-pointer"
+                          className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer"
                         >
-                          変更
+                          変更する
                         </button>
                       </div>
 
                       {pinChangeSuccess && (
-                        <p className="text-[11px] text-emerald-400 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" />
-                          <span>パスコードを更新しました（旧PINは無効化されました）</span>
+                        <p className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>パスコードを正常に更新しました</span>
                         </p>
                       )}
                     </form>
 
-                    <div className="pt-2 border-t border-[#2D3342] flex justify-between items-center">
-                      <span className="text-[10px] text-slate-500">パスコード初期化</span>
+                    <div className="pt-2.5 border-t border-slate-700 flex justify-between items-center">
+                      <span className="text-[11px] text-slate-400">初期パスコード（1925）に戻す</span>
                       <button
                         onClick={handleResetPin}
-                        className="px-2 py-1 bg-[#1A1D24] hover:bg-[#282F3E] text-slate-400 hover:text-slate-200 rounded text-[10px] transition-colors cursor-pointer"
+                        className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white rounded text-[11px] font-medium transition-colors cursor-pointer"
                       >
                         初期値にリセット
                       </button>
@@ -1705,30 +1798,28 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
           </div>
         )}
 
-        {/* ========================================================
-            3. Strict Storage Clear Confirmation Dialog
-            ======================================================== */}
+        {/* Storage Clear Confirmation Modal */}
         {showClearStorageConfirm && (
           <div className="absolute inset-0 z-30 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
-            <div className="bg-[#1F232D] border border-rose-500/40 rounded-2xl max-w-sm w-full p-4 space-y-3 shadow-2xl text-slate-200">
+            <div className="bg-slate-900 border border-rose-500/50 rounded-2xl max-w-sm w-full p-4 space-y-3 shadow-2xl text-slate-100">
               <div className="flex items-center gap-2.5 text-rose-400">
-                <div className="w-8 h-8 rounded-lg bg-rose-500/15 border border-rose-500/30 flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-lg bg-rose-500/20 border border-rose-500/40 flex items-center justify-center shrink-0">
                   <AlertTriangle className="w-4.5 h-4.5 text-rose-400" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-sm text-slate-100">本当に全データを削除しますか？</h4>
-                  <span className="text-[10px] text-rose-300 font-mono">警告: 復元不可</span>
+                  <h4 className="font-bold text-sm text-slate-100">本当に全データを初期化しますか？</h4>
+                  <span className="text-[10px] text-rose-300 font-mono font-bold">警告: 復元不可</span>
                 </div>
               </div>
 
-              <p className="text-xs text-slate-300 leading-relaxed bg-[#161820] p-2.5 rounded-lg border border-[#2D3342]">
+              <p className="text-xs text-slate-300 leading-relaxed bg-slate-950 p-2.5 rounded-lg border border-slate-700">
                 この操作を実行すると、<strong>N-POINT残高、会員ランク、乗車履歴、保存したお気に入り、カスタム設定</strong>を含むLocalStorage上のすべての端末データが完全に削除され、アプリが初期状態に戻ります。
               </p>
 
               <div className="flex gap-2 pt-1">
                 <button
                   onClick={() => setShowClearStorageConfirm(false)}
-                  className="flex-1 py-2 bg-[#2D3342] hover:bg-[#384052] text-slate-300 rounded-lg text-xs font-medium transition-colors cursor-pointer"
+                  className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
                 >
                   キャンセル
                 </button>
@@ -1737,7 +1828,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                     setShowClearStorageConfirm(false);
                     executeClearAllStorage();
                   }}
-                  className="flex-1 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-center gap-1 shadow-md"
+                  className="flex-1 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1 shadow-md"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>完全に削除する</span>

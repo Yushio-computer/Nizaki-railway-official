@@ -47,6 +47,32 @@ export const DEFAULT_LINE_INFOS: { id: string; name: string; code: string; color
   { id: 'tsuchiura', name: '土浦線', code: 'TC', color: '#10B981' },
 ];
 
+export const LINE_STATIONS: Record<string, string[]> = {
+  kanzaki: [
+    '東京', '浅草', '北千住', '足立', '草加', '越谷レイクタウン', '七光台', '北春日部',
+    '地下鉄岩槻', '蓮田', '丸山', '大宮', '朝霞台', '新座', 'ひばりヶ丘', '田無',
+    '武蔵境', '中三鷹', '調布', '生田', '溝の口', '新横浜', '横浜'
+  ],
+  kanzaki_kosoku: [
+    '東京', '新橋', '品川', '大井町', '平和島', '地下鉄蒲田', '川崎', '鶴見', '横浜'
+  ],
+  saichi: [
+    '東京', '南千住', '北千住', '綾瀬', '松戸', '柏', '七光台', '春日部', '岩槻',
+    '大宮公園', '大宮', 'さいたま新都心', '南浦和', '西青木', '川口', '志村坂上',
+    '上板橋', '小竹向原', '池袋', '新宿'
+  ],
+  tsuchiura: [
+    '松戸', '新松戸', '松が丘', '柏', '守谷', '谷井田', '森の里', '荒川沖', '土浦',
+    '高浜', '茨城空港', '鹿島旭', '大洗', '那珂湊', '平磯', 'ひたちなか海浜公園',
+    '久慈川', '大甕（おおみか）', '東大沼', '多賀', '会瀬（おうせ）', '日立'
+  ],
+};
+
+export const getStationsForLine = (lineId: string): string[] => {
+  if (lineId === 'saichi_loop' || lineId === 'saichi') return LINE_STATIONS.saichi || [];
+  return LINE_STATIONS[lineId] || LINE_STATIONS.kanzaki || [];
+};
+
 export const COMMON_REASONS = [
   '車両点検のため',
   '人身事故のため',
