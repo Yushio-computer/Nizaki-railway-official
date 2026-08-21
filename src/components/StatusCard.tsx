@@ -134,6 +134,10 @@ export const StatusCard: React.FC<StatusCardProps> = ({ lines }) => {
                         <span>{forecast.categoryLabel || '運行予測・注意情報'}</span>
                       </span>
 
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-600 text-white shadow-2xs">
+                        ※架空設定（フィクション）
+                      </span>
+
                       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-white/80 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700">
                         対象: {forecast.lineName}（{forecast.section}）
                       </span>
@@ -265,6 +269,11 @@ export const StatusCard: React.FC<StatusCardProps> = ({ lines }) => {
                         {line.message}
                       </div>
                     )}
+                    {isLineDelay || isSuspended ? (
+                      <div className="text-[9px] text-[#857D99] font-medium pt-0.5">
+                        ※本運行支障・遅延情報は架空鉄道アプリ内のフィクションです。実在の路線・気象等とは関係ありません。
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}

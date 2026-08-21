@@ -1690,7 +1690,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                             )}
                           </div>
                           <p className="text-[10px] text-slate-400">
-                            悪天候・台風・強風等の影響予告を事前アナウンス（設定時刻で自動停止）
+                            悪天候・台風・強風等の影響予告を事前アナウンス（※アプリ内シミュレーション・フィクション表示）
                           </p>
                         </div>
                       </div>

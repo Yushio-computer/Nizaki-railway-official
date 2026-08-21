@@ -22,9 +22,7 @@ export interface DisplayLine {
   stations: StationNode[];
 }
 
-interface TrainLocationTabProps {
-  onOpenTimetable?: (stationName?: string, direction?: 1 | 2) => void;
-}
+interface TrainLocationTabProps {}
 
 export interface LiveTrainPos {
   id: string;
@@ -333,9 +331,7 @@ const MOCK_TRAINS: LiveTrainPos[] = [
   },
 ];
 
-export const TrainLocationTab: React.FC<TrainLocationTabProps> = ({
-  onOpenTimetable,
-}) => {
+export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
   const [activeLineId, setActiveLineId] = useState<string>('kanzaki');
   const [direction, setDirection] = useState<1 | 2>(1); // 1=下り/方向1, 2=上り/方向2
   const [selectedTrain, setSelectedTrain] = useState<LiveTrainPos | null>(null);
@@ -923,49 +919,35 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
           })}
         </div>
 
-        {/* 2. Direction Switcher Segment Switch & Timetable Action */}
-        <div className="p-3 bg-[#F4F3F8] space-y-2">
-          <div className="flex items-center gap-2">
-            <div className="bg-[#E6E2EE]/60 p-1 rounded-xl flex items-center gap-1 flex-1">
-              <button
-                onClick={() => {
-                  setDirection(1);
-                  setSelectedTrain(null);
-                }}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer text-center ${
-                  direction === 1
-                    ? 'bg-[#5B21B6] text-white shadow-xs'
-                    : 'text-[#6B6380] hover:text-[#221C35]'
-                }`}
-              >
-                {activeLine.direction1}
-              </button>
-              <button
-                onClick={() => {
-                  setDirection(2);
-                  setSelectedTrain(null);
-                }}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer text-center ${
-                  direction === 2
-                    ? 'bg-[#5B21B6] text-white shadow-xs'
-                    : 'text-[#6B6380] hover:text-[#221C35]'
-                }`}
-              >
-                {activeLine.direction2}
-              </button>
-            </div>
-
-            {onOpenTimetable && (
-              <button
-                type="button"
-                onClick={() => onOpenTimetable(activeLineId === 'tsuchiura' ? '松戸' : undefined, direction)}
-                className="px-3 py-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-[#5B21B6] text-xs font-bold rounded-xl flex items-center gap-1.5 shrink-0 transition-all cursor-pointer shadow-2xs active:scale-95"
-                title="土浦線 駅時刻表を開く"
-              >
-                <Clock className="w-3.5 h-3.5 text-[#5B21B6]" />
-                <span className="hidden xs:inline">駅時刻表</span>
-              </button>
-            )}
+        {/* 2. Direction Switcher Segment Switch (パープルの丸みのあるスイッチ) */}
+        <div className="p-3 bg-[#F4F3F8]">
+          <div className="bg-[#E6E2EE]/60 p-1 rounded-xl flex items-center gap-1">
+            <button
+              onClick={() => {
+                setDirection(1);
+                setSelectedTrain(null);
+              }}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer text-center ${
+                direction === 1
+                  ? 'bg-[#5B21B6] text-white shadow-xs'
+                  : 'text-[#6B6380] hover:text-[#221C35]'
+              }`}
+            >
+              {activeLine.direction1}
+            </button>
+            <button
+              onClick={() => {
+                setDirection(2);
+                setSelectedTrain(null);
+              }}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer text-center ${
+                direction === 2
+                  ? 'bg-[#5B21B6] text-white shadow-xs'
+                  : 'text-[#6B6380] hover:text-[#221C35]'
+              }`}
+            >
+              {activeLine.direction2}
+            </button>
           </div>
         </div>
       </div>
@@ -1089,7 +1071,6 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
 
           <LocationStationDetailCard
             stationInfo={selectedStation}
-            onOpenTimetable={(stName) => onOpenTimetable?.(stName, direction)}
           />
         </div>
       )}

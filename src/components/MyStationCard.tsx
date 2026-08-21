@@ -9,7 +9,6 @@ interface MyStationCardProps {
   registeredStations: RegisterableStation[];
   onActiveStationChange?: (stationName: string, platform: 1 | 2) => void;
   onUpdateRegisteredStations?: (stations: RegisterableStation[]) => void;
-  onOpenTimetable?: (stationName: string, direction: 1 | 2) => void;
 }
 
 export interface DynamicDeparture {
@@ -609,7 +608,6 @@ const getDeterministicDeparturesForStation = (
 export const MyStationCard: React.FC<MyStationCardProps> = ({
   registeredStations,
   onActiveStationChange,
-  onOpenTimetable,
 }) => {
   // GPS検出による最寄駅情報（マイ駅配列 registeredStations とは完全独立）
   const [nearestStation, setNearestStation] = useState<(RegisterableStation & { dist: number }) | null>(null);
@@ -827,20 +825,8 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
           </div>
         )}
 
-        {/* Platform Slide Switcher (番線・上り/下り スライド切替) & Station Timetable Button */}
-        <div className="pt-1.5 border-t border-[#F0EEF6] flex items-center justify-between gap-2">
-          {onOpenTimetable && (
-            <button
-              type="button"
-              onClick={() => onOpenTimetable(currentStation.name, platform)}
-              className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-[#5B21B6] bg-purple-50 hover:bg-purple-100 border border-purple-200 transition-all cursor-pointer flex items-center gap-1.5 shrink-0 active:scale-95"
-              title={`${currentStation.name}駅の時刻表を表示`}
-            >
-              <Clock className="w-3.5 h-3.5 text-[#5B21B6]" />
-              <span>駅時刻表</span>
-            </button>
-          )}
-
+        {/* Platform Slide Switcher (番線・上り/下り スライド切替) */}
+        <div className="pt-1.5 border-t border-[#F0EEF6] flex items-center justify-end gap-2">
           {/* Segmented Slide Switch Control */}
           <div className="bg-[#F4F3F8] p-0.5 rounded-lg border border-[#E6E2EE] flex items-center gap-0.5 shrink-0 ml-auto">
             {platformConfig.platforms.includes(1) && (
