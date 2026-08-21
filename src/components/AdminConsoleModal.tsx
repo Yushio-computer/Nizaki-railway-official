@@ -26,6 +26,13 @@ import {
   ArrowLeftRight,
   Sliders,
   ChevronDown,
+  CloudRain,
+  Wind,
+  Snowflake,
+  Clock,
+  Calendar,
+  Sparkles,
+  Info,
 } from 'lucide-react';
 import { systemLogger, SystemLogEntry, SystemMetrics, AuditResult } from '../utils/systemLogger';
 import {
@@ -40,6 +47,11 @@ import {
   getStationsForLine,
   isWeatherRelatedReason,
   getDurationPresetsForReason,
+  OperationForecast,
+  ForecastCategory,
+  ForecastSeverity,
+  FORECAST_PRESETS,
+  getExpiryOptions,
 } from '../utils/disruptionManager';
 
 interface AdminConsoleModalProps {
@@ -65,8 +77,8 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   const [newPinInput, setNewPinInput] = useState('');
   const [pinChangeSuccess, setPinChangeSuccess] = useState(false);
 
-  // Tabs: 'disruption' | 'diagnostics' | 'errors' | 'storage' | 'settings'
-  const [activeTab, setActiveTab] = useState<'disruption' | 'diagnostics' | 'errors' | 'storage' | 'settings'>('disruption');
+  // Tabs: 'disruption' | 'forecast' | 'diagnostics' | 'errors' | 'storage' | 'settings'
+  const [activeTab, setActiveTab] = useState<'disruption' | 'forecast' | 'diagnostics' | 'errors' | 'storage' | 'settings'>('disruption');
 
   // Disruption Dispatcher State
   const [selectedLineId, setSelectedLineId] = useState<string>('kanzaki');
@@ -83,6 +95,20 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
   const [linkToSystem, setLinkToSystem] = useState<boolean>(true);
   const [activeDisruptionsMap, setActiveDisruptionsMap] = useState<Record<string, LineDisruption>>(() =>
     disruptionManager.getAllDisruptions()
+  );
+
+  // Operation Forecast (運転予告・運行予測) State
+  const [forecastLineId, setForecastLineId] = useState<string>('all');
+  const [forecastCategory, setForecastCategory] = useState<ForecastCategory>('typhoon');
+  const [forecastSeverity, setForecastSeverity] = useState<ForecastSeverity>('warning');
+  const [forecastPeriod, setForecastPeriod] = useState<string>('本日夕方以降（16時頃〜終電）');
+  const [forecastSection, setForecastSection] = useState<string>('全線');
+  const [forecastHeadline, setForecastHeadline] = useState<string>('');
+  const [forecastDescription, setForecastDescription] = useState<string>('');
+  const [selectedExpiryHours, setSelectedExpiryHours] = useState<number>(6); // デフォルト6時間後
+  const [customExpiryDateInput, setCustomExpiryDateInput] = useState<string>('');
+  const [activeForecastsList, setActiveForecastsList] = useState<OperationForecast[]>(() =>
+    disruptionManager.getOperationForecasts()
   );
 
   // System & Diagnostics State
@@ -220,6 +246,91 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
         setDurationUntil(cat.defaultDuration);
       }
     }
+  };
+
+  // Operation Forecast (運転予告・運行予測) プリセット自動適用
+  const applyForecastPreset = (
+    cat: ForecastCategory,
+    lineId: string = forecastLineId,
+    period: string = forecastPeriod,
+    sec: string = forecastSection
+  ) => {
+    setForecastCategory(cat);
+    const preset = FORECAST_PRESETS.find((p) => p.category === cat) || FORECAST_PRESETS[0];
+    const targetLineName =
+      lineId === 'all'
+        ? '神埼鉄道グループ全線'
+        : DEFAULT_LINE_INFOS.find((l) => l.id === lineId)?.name || '神埼線';
+
+    setForecastSeverity(preset.defaultSeverity);
+    setForecastPeriod(period || preset.defaultPeriod);
+    setSelectedExpiryHours(preset.defaultHoursAhead);
+    setForecastHeadline(preset.generateHeadline(targetLineName));
+    setForecastDescription(preset.generateDescription(targetLineName, period || preset.defaultPeriod, sec || '全線'));
+  };
+
+  // 運転予告・運行予測の発令処理
+  const handleIssueForecast = () => {
+    const targetLine = DEFAULT_LINE_INFOS.find((l) => l.id === forecastLineId);
+    const lineName = forecastLineId === 'all' ? '神埼鉄道グループ全線' : (targetLine?.name || '神埼線');
+    const preset = FORECAST_PRESETS.find((p) => p.category === forecastCategory) || FORECAST_PRESETS[0];
+
+    // 有効期限の算出
+    let expiresAtDate: Date;
+    if (customExpiryDateInput) {
+      expiresAtDate = new Date(customExpiryDateInput);
+      if (isNaN(expiresAtDate.getTime()) || expiresAtDate.getTime() <= Date.now()) {
+        alert('有効な未来の日時を指定してください。');
+        return;
+      }
+    } else {
+      expiresAtDate = new Date(Date.now() + selectedExpiryHours * 60 * 60 * 1000);
+    }
+
+    const saved = disruptionManager.saveOperationForecast({
+      lineId: forecastLineId,
+      lineName,
+      code: targetLine?.code,
+      category: forecastCategory,
+      categoryLabel: preset.badgeLabel,
+      expectedPeriod: forecastPeriod.trim() || preset.defaultPeriod,
+      section: forecastSection.trim() || '全線',
+      headline: forecastHeadline.trim() || preset.generateHeadline(lineName),
+      description: forecastDescription.trim() || preset.generateDescription(lineName, forecastPeriod, forecastSection),
+      severity: forecastSeverity,
+      expiresAt: expiresAtDate.toISOString(),
+      expiresAtTimestamp: expiresAtDate.getTime(),
+      isActive: true,
+    });
+
+    setActiveForecastsList(disruptionManager.getOperationForecasts());
+    systemLogger.warn(
+      `[運行予測発令] ${lineName} に「${preset.name}」（有効期限: ${expiresAtDate.toLocaleString('ja-JP')}）を発令しました`,
+      'DisruptionDispatcher'
+    );
+    setActionNotice(`【運行予測発令】${lineName} に「${preset.name}」を発令しました（期限時に自動解除）`);
+    setTimeout(() => setActionNotice(null), 4000);
+    if (onRefreshAppState) onRefreshAppState();
+  };
+
+  // 運転予告の手動解除
+  const handleDeleteForecast = (id: string) => {
+    disruptionManager.removeOperationForecast(id);
+    setActiveForecastsList(disruptionManager.getOperationForecasts());
+    systemLogger.info(`[運行予測解除] 予告警報 (ID: ${id}) を手動解除しました`, 'DisruptionDispatcher');
+    setActionNotice('【運行予測解除】選択した運行予告・警報を解除しました');
+    setTimeout(() => setActionNotice(null), 3000);
+    if (onRefreshAppState) onRefreshAppState();
+  };
+
+  // 全ての運転予告を一括解除
+  const handleClearAllForecasts = () => {
+    disruptionManager.clearAllOperationForecasts();
+    setActiveForecastsList([]);
+    systemLogger.info('[運行予測一括解除] すべての運行予告・警報を解除しました', 'DisruptionDispatcher');
+    setActionNotice('【全予告解除】すべての運行予測・警報を解除しました');
+    setTimeout(() => setActionNotice(null), 3000);
+    if (onRefreshAppState) onRefreshAppState();
   };
 
   // Dispatch disruption
@@ -573,7 +684,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                   神埼鉄道 管理者指令コンソール
                 </span>
                 <span className="px-1.5 py-0.5 bg-slate-700 text-slate-300 text-[10px] font-mono font-bold rounded">
-                  v3.10.0
+                  v3.11.0
                 </span>
               </div>
               <p className="text-[10px] text-slate-400">
@@ -699,6 +810,28 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                 {activeDisruptionCount > 0 && (
                   <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded text-[10px] font-mono font-bold">
                     {activeDisruptionCount}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTab('forecast');
+                  if (!forecastHeadline) {
+                    applyForecastPreset(forecastCategory, forecastLineId, forecastPeriod, forecastSection);
+                  }
+                }}
+                className={`px-3 py-2 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 border-b-2 ${
+                  activeTab === 'forecast'
+                    ? 'text-sky-400 border-sky-400'
+                    : 'text-slate-400 hover:text-slate-200 border-transparent'
+                }`}
+              >
+                <CloudRain className="w-3.5 h-3.5 text-sky-400" />
+                <span>運行予測 (予告)</span>
+                {activeForecastsList.length > 0 && (
+                  <span className="px-1.5 py-0.5 bg-sky-500/20 text-sky-300 border border-sky-500/40 rounded text-[10px] font-mono font-bold">
+                    {activeForecastsList.length}
                   </span>
                 )}
               </button>
@@ -1455,6 +1588,441 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                               </div>
                             </div>
                           ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ========================================================
+                  TAB 0.5: 運行予測・運転予告 (Weather Forecast, Gale/Snow/Typhoon Alerts with Auto-Expiration)
+                  ======================================================== */}
+              {activeTab === 'forecast' && (() => {
+                const expiryOptions = getExpiryOptions();
+
+                return (
+                  <div className="space-y-3 animate-fadeIn">
+                    {/* Header Banner */}
+                    <div className="p-2.5 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                            activeForecastsList.length > 0
+                              ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                              : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
+                          }`}
+                        >
+                          <CloudRain className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-slate-100 text-xs flex items-center gap-1.5">
+                            <span>運行予測・事前警報（運転予告）</span>
+                            {activeForecastsList.length > 0 ? (
+                              <span className="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 text-[10px] font-bold">
+                                {activeForecastsList.length}件 予告発令中
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 text-[10px]">
+                                発令なし
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-400">
+                            悪天候・台風・強風等の影響予告を事前アナウンス（設定時刻で自動停止）
+                          </p>
+                        </div>
+                      </div>
+
+                      {activeForecastsList.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleClearAllForecasts}
+                          className="px-2.5 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded text-[11px] font-medium transition-colors cursor-pointer flex items-center gap-1"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>全予告を一括解除</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Step 1: Target Line, Section, and Expected Period */}
+                    <div className="p-3 bg-slate-800/90 rounded-xl border border-slate-700 space-y-2.5">
+                      <label className="text-slate-100 font-bold text-xs flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded-full bg-slate-700 text-slate-200 text-[10px] flex items-center justify-center font-bold">
+                          1
+                        </span>
+                        <span>対象路線・区間・影響見込み時間帯</span>
+                      </label>
+
+                      {/* Line Selector */}
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForecastLineId('all');
+                            applyForecastPreset(forecastCategory, 'all', forecastPeriod, forecastSection);
+                          }}
+                          className={`p-2 rounded-lg text-left transition-all border cursor-pointer ${
+                            forecastLineId === 'all'
+                              ? 'bg-sky-500/20 border-sky-400 text-sky-200 shadow-xs'
+                              : 'bg-slate-900/70 border-slate-700 text-slate-300 hover:border-slate-500'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-slate-200" />
+                            <span className="font-bold text-xs">全線一括</span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">グループ全線</div>
+                        </button>
+
+                        {DEFAULT_LINE_INFOS.map((def) => {
+                          const isSelected = forecastLineId === def.id;
+                          return (
+                            <button
+                              key={def.id}
+                              type="button"
+                              onClick={() => {
+                                setForecastLineId(def.id);
+                                applyForecastPreset(forecastCategory, def.id, forecastPeriod, forecastSection);
+                              }}
+                              className={`p-2 rounded-lg text-left transition-all border cursor-pointer ${
+                                isSelected
+                                  ? 'bg-slate-750 border-amber-400 text-slate-100 shadow-xs ring-1 ring-amber-400/40'
+                                  : 'bg-slate-900/70 border-slate-700 text-slate-300 hover:border-slate-500'
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: def.color }} />
+                                <span className="font-bold text-xs">{def.name}</span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 mt-0.5 font-mono">{def.code}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Section and Expected Period */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        <div className="space-y-1">
+                          <span className="text-[11px] text-slate-300 font-medium">対象区間:</span>
+                          <input
+                            type="text"
+                            value={forecastSection}
+                            onChange={(e) => {
+                              setForecastSection(e.target.value);
+                              applyForecastPreset(forecastCategory, forecastLineId, forecastPeriod, e.target.value);
+                            }}
+                            placeholder="例: 全線、北千住〜大宮間"
+                            className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-slate-100 text-xs font-medium focus:outline-none focus:border-sky-400"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <span className="text-[11px] text-slate-300 font-medium">影響見込み時間帯:</span>
+                          <input
+                            type="text"
+                            value={forecastPeriod}
+                            onChange={(e) => {
+                              setForecastPeriod(e.target.value);
+                              applyForecastPreset(forecastCategory, forecastLineId, e.target.value, forecastSection);
+                            }}
+                            placeholder="例: 本日夕方以降（16時頃〜終電）"
+                            className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-slate-100 text-xs font-medium focus:outline-none focus:border-sky-400"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Period Quick Presets */}
+                      <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                        <span className="text-[9px] text-slate-400">時間帯クイック指定:</span>
+                        {[
+                          '本日午後から夜にかけて',
+                          '本日夕方以降（16時〜終電）',
+                          '今夜遅くから明朝にかけて',
+                          '明日未明から早朝',
+                          '明日午前中',
+                          '明日終日',
+                        ].map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => {
+                              setForecastPeriod(p);
+                              applyForecastPreset(forecastCategory, forecastLineId, p, forecastSection);
+                            }}
+                            className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
+                              forecastPeriod === p
+                                ? 'bg-sky-600 text-white font-bold'
+                                : 'bg-slate-900 text-slate-300 hover:text-white border border-slate-700'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Step 2: Forecast Category & Severity */}
+                    <div className="p-3 bg-slate-800/90 rounded-xl border border-slate-700 space-y-2.5">
+                      <label className="text-slate-100 font-bold text-xs flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded-full bg-slate-700 text-slate-200 text-[10px] flex items-center justify-center font-bold">
+                          2
+                        </span>
+                        <span>気象・事象カテゴリ & 警戒レベル選択</span>
+                      </label>
+
+                      {/* Category Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                        {FORECAST_PRESETS.map((preset) => {
+                          const isSelected = forecastCategory === preset.category;
+                          return (
+                            <button
+                              key={preset.category}
+                              type="button"
+                              onClick={() => {
+                                applyForecastPreset(preset.category, forecastLineId, forecastPeriod, forecastSection);
+                              }}
+                              className={`p-2 rounded-lg text-left transition-all border cursor-pointer ${
+                                isSelected
+                                  ? 'bg-sky-500/25 border-sky-400 text-white shadow-xs font-bold ring-1 ring-sky-400/40'
+                                  : 'bg-slate-900/70 border-slate-700 text-slate-300 hover:border-slate-500'
+                              }`}
+                            >
+                              <div className="text-xs flex items-center gap-1">
+                                <span>{preset.icon}</span>
+                                <span>{preset.name}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Severity Selector */}
+                      <div className="flex items-center gap-2 pt-1">
+                        <span className="text-[11px] text-slate-300 font-medium shrink-0">警戒レベル:</span>
+                        <div className="grid grid-cols-3 gap-1.5 flex-1">
+                          {[
+                            { level: 'caution' as ForecastSeverity, label: '注意 (Caution)', icon: 'ℹ️', color: 'bg-blue-500/20 border-blue-400 text-blue-200' },
+                            { level: 'warning' as ForecastSeverity, label: '警戒 (Warning)', icon: '⚠️', color: 'bg-amber-500/20 border-amber-400 text-amber-200' },
+                            { level: 'critical' as ForecastSeverity, label: '重大 (Critical)', icon: '🚨', color: 'bg-rose-500/20 border-rose-400 text-rose-200' },
+                          ].map((item) => (
+                            <button
+                              key={item.level}
+                              type="button"
+                              onClick={() => setForecastSeverity(item.level)}
+                              className={`py-1.5 px-2 rounded-lg border text-center text-xs transition-colors cursor-pointer ${
+                                forecastSeverity === item.level
+                                  ? `${item.color} font-bold shadow-xs`
+                                  : 'bg-slate-900/70 border-slate-700 text-slate-400 hover:text-slate-200'
+                              }`}
+                            >
+                              <span className="mr-1">{item.icon}</span>
+                              <span>{item.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Step 3: Expiration Time Setting (Auto-Expiration) */}
+                    <div className="p-3 bg-slate-800/90 rounded-xl border border-slate-700 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-slate-100 font-bold text-xs flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded-full bg-slate-700 text-slate-200 text-[10px] flex items-center justify-center font-bold">
+                            3
+                          </span>
+                          <span>有効期限・自動停止時間の設定（実時間連動）</span>
+                        </label>
+                        <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-medium">
+                          <Clock className="w-3 h-3" />
+                          <span>期限到達でシステムが自動停止</span>
+                        </span>
+                      </div>
+
+                      <p className="text-[11px] text-slate-400">
+                        設定した時間（日時）になると、アプリ上の警報バナー・予報表示が自動的に解除・非表示になります。
+                      </p>
+
+                      {/* Quick Expiry Presets from Real Time */}
+                      <div className="space-y-1.5">
+                        <span className="text-[11px] text-slate-300 font-medium">
+                          実際の時間の中から選択（ワンタップ）:
+                        </span>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                          {expiryOptions.map((opt, idx) => {
+                            const isSelected = !customExpiryDateInput && selectedExpiryHours === opt.hoursFromNow;
+                            return (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedExpiryHours(opt.hoursFromNow);
+                                  setCustomExpiryDateInput('');
+                                }}
+                                className={`p-2 rounded-lg border text-left text-[11px] transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-emerald-600/30 border-emerald-400 text-emerald-200 font-bold shadow-xs'
+                                    : 'bg-slate-900/70 border-slate-700 text-slate-300 hover:border-slate-500'
+                                }`}
+                              >
+                                <div>{opt.label}</div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Custom Datetime Local Picker */}
+                      <div className="pt-1 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-slate-300 font-medium">
+                            または任意の日時を指定（カレンダーピッカー）:
+                          </span>
+                          {customExpiryDateInput && (
+                            <button
+                              type="button"
+                              onClick={() => setCustomExpiryDateInput('')}
+                              className="text-[10px] text-slate-400 hover:text-slate-200 cursor-pointer"
+                            >
+                              クリアしてプリセットに戻す
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="datetime-local"
+                          value={customExpiryDateInput}
+                          onChange={(e) => setCustomExpiryDateInput(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-slate-100 text-xs font-mono focus:outline-none focus:border-emerald-400"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Step 4: Official Announcement Text & Preview */}
+                    <div className="p-3 bg-slate-800/90 rounded-xl border border-slate-700 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-slate-100 font-bold text-xs flex items-center gap-1.5">
+                          <span className="w-4 h-4 rounded-full bg-slate-700 text-slate-200 text-[10px] flex items-center justify-center font-bold">
+                            4
+                          </span>
+                          <span>公式アナウンス見出し & 案内文</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => applyForecastPreset(forecastCategory, forecastLineId, forecastPeriod, forecastSection)}
+                          className="text-[10px] text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer font-medium"
+                        >
+                          <Sparkles className="w-3 h-3" />
+                          <span>文面を自動再生成</span>
+                        </button>
+                      </div>
+
+                      {/* Headline */}
+                      <div className="space-y-1">
+                        <span className="text-[11px] text-slate-300 font-medium">告知見出し:</span>
+                        <input
+                          type="text"
+                          value={forecastHeadline}
+                          onChange={(e) => setForecastHeadline(e.target.value)}
+                          placeholder="告知見出し"
+                          className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-slate-100 text-xs font-bold focus:outline-none focus:border-sky-400"
+                        />
+                      </div>
+
+                      {/* Description */}
+                      <div className="space-y-1">
+                        <span className="text-[11px] text-slate-300 font-medium">詳細案内文（鉄道公式形式）:</span>
+                        <textarea
+                          rows={3}
+                          value={forecastDescription}
+                          onChange={(e) => setForecastDescription(e.target.value)}
+                          placeholder="詳細案内文"
+                          className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-slate-100 text-xs leading-relaxed focus:outline-none focus:border-sky-400 resize-none font-sans"
+                        />
+                      </div>
+
+                      {/* Dispatch Button */}
+                      <button
+                        type="button"
+                        onClick={handleIssueForecast}
+                        className="w-full py-2.5 bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md mt-1"
+                      >
+                        <Zap className="w-4 h-4 fill-slate-950" />
+                        <span>【運行予測発令】アプリへ事前予告・警報を反映する</span>
+                      </button>
+                    </div>
+
+                    {/* Active Forecasts List */}
+                    <div className="pt-2 border-t border-slate-700 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-slate-200">
+                          現在発令中の運行予測・警報一覧
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono font-bold">
+                          {activeForecastsList.length}件 発令中
+                        </span>
+                      </div>
+
+                      {activeForecastsList.length === 0 ? (
+                        <div className="p-3 bg-slate-800/80 rounded-lg border border-slate-700 text-center text-slate-400 text-xs">
+                          現在発令中の運行予測・運転予告はありません
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {activeForecastsList.map((fc) => {
+                            const isWarning = fc.severity === 'warning' || fc.severity === 'critical';
+                            const remainMs = fc.expiresAtTimestamp ? fc.expiresAtTimestamp - Date.now() : 0;
+                            const remainHours = Math.floor(remainMs / 3600000);
+                            const remainMins = Math.floor((remainMs % 3600000) / 60000);
+
+                            return (
+                              <div
+                                key={fc.id}
+                                className={`p-2.5 bg-slate-800/90 rounded-lg border flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+                                  isWarning ? 'border-amber-500/50' : 'border-sky-500/50'
+                                }`}
+                              >
+                                <div className="space-y-1 flex-1 min-w-0">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                        isWarning
+                                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                          : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                                      }`}
+                                    >
+                                      {fc.categoryLabel}
+                                    </span>
+                                    <span className="font-bold text-slate-200 text-xs">
+                                      {fc.lineName}（{fc.section}）
+                                    </span>
+                                    <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
+                                      <Clock className="w-3 h-3" />
+                                      <span>
+                                        {remainHours > 0 ? `あと${remainHours}時間${remainMins}分で自動解除` : `あと${remainMins}分で自動解除`}
+                                      </span>
+                                    </span>
+                                  </div>
+                                  <div className="text-[11px] font-bold text-slate-100">
+                                    {fc.headline}
+                                  </div>
+                                  <p className="text-[10px] text-slate-300 line-clamp-2 leading-relaxed">
+                                    {fc.description}
+                                  </p>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteForecast(fc.id)}
+                                    className="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded text-[10px] font-medium transition-colors cursor-pointer"
+                                  >
+                                    手動解除
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
