@@ -3,6 +3,7 @@ import { Users, ChevronLeft, ChevronRight, MapPin, Moon, Clock, Sparkles, Naviga
 import { RegisterableStation } from './MyStationRegisterCard';
 import { findNearestStation } from '../utils/nearestStation';
 import { getTsuchiuraDeparturesForStation } from '../utils/tsuchiuraTimetable';
+import { disruptionManager } from '../utils/disruptionManager';
 
 interface MyStationCardProps {
   registeredStations: RegisterableStation[];
@@ -20,6 +21,8 @@ export interface DynamicDeparture {
   isFirstTrain?: boolean; // 初電タグ
   isLastTrain?: boolean;  // 終電タグ
   isOrigin?: boolean;     // 当駅始発タグ
+  delayMinutes?: number;  // 遅延分数
+  isSuspended?: boolean;  // 運休・見合わせフラグ
 }
 
 // 各路線の初電・終電運用スケジュール情報
@@ -501,6 +504,15 @@ const generateDeterministicDeparture = (
   const isSC = chosenLine.key === 'SC' || chosenLine.name.includes('埼千') || chosenLine.name.includes('環状');
   const isOrigin = !isSC && platform === 1 && originStations.some((s) => stationName.includes(s));
 
+  const lineCodeToId: Record<string, string> = {
+    'Y': 'kanzaki',
+    'NI': 'kanzaki_kosoku',
+    'SC': 'saichi',
+    'TC': 'tsuchiura',
+  };
+  const lineId = lineCodeToId[chosenLine.key] || 'kanzaki';
+  const effectiveDelay = disruptionManager.getEffectiveDelayForTrain(lineId, baseTimestamp);
+
   return {
     id: `train-${stationName}-${platform}-${baseTimestamp}`,
     lineName: chosenLine.name,
@@ -511,6 +523,8 @@ const generateDeterministicDeparture = (
     isFirstTrain,
     isLastTrain,
     isOrigin,
+    delayMinutes: effectiveDelay.delayMinutes,
+    isSuspended: effectiveDelay.isSuspended,
   };
 };
 
@@ -538,7 +552,16 @@ const getDeterministicDeparturesForStation = (
 
   if (isTsuchiura) {
     const tcList = getTsuchiuraDeparturesForStation(stationName, platform, baseTimestamp, limit);
-    if (tcList.length > 0) return tcList;
+    if (tcList.length > 0) {
+      return tcList.map((dep) => {
+        const eff = disruptionManager.getEffectiveDelayForTrain('tsuchiura', dep.departureTimestamp || dep.id);
+        return {
+          ...dep,
+          delayMinutes: eff.delayMinutes,
+          isSuspended: eff.isSuspended,
+        };
+      });
+    }
   }
 
   let intervalMinutes = 5;
@@ -597,12 +620,20 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
   // 動的発車列車リスト (常に3本維持)
   const [departures, setDepartures] = useState<DynamicDeparture[]>([]);
 
-  // 5秒ごとに現在時刻を更新するタイマー (超軽量化)
+  // 5秒ごとに現在時刻を更新するタイマー + 運行指令変更の購読
   useEffect(() => {
     const timer = setInterval(() => {
       setNow(Date.now());
     }, 5000);
-    return () => clearInterval(timer);
+
+    const unsubscribe = disruptionManager.subscribe(() => {
+      setNow(Date.now());
+    });
+
+    return () => {
+      clearInterval(timer);
+      unsubscribe();
+    };
   }, []);
 
   const DEFAULT_TOKYO_STATION: RegisterableStation = {
@@ -950,7 +981,16 @@ export const MyStationCard: React.FC<MyStationCardProps> = ({
                     {dep.trainType}
                   </span>
 
-                  {/* 初電・終電特別タグ */}
+                  {/* 初電・終電特別タグ・遅延タグ */}
+                  {dep.isSuspended ? (
+                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-rose-600 text-white border border-rose-700 animate-pulse whitespace-nowrap shrink-0 shadow-2xs">
+                      [見合わせ]
+                    </span>
+                  ) : dep.delayMinutes && dep.delayMinutes > 0 ? (
+                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-500 text-white border border-amber-600 whitespace-nowrap shrink-0 shadow-2xs">
+                      [+{dep.delayMinutes}分遅れ]
+                    </span>
+                  ) : null}
                   {dep.isOrigin && (
                     <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-[#8B5CF6] text-white border border-purple-700 whitespace-nowrap shrink-0 shadow-2xs">
                       [当駅始発]

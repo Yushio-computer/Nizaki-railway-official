@@ -18,7 +18,10 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
-// 擬似的なリアルタイム運行状態生成関数
+// 管理者・指令発令による運行支障・遅延管理メモリマップ
+let activeDisruptions: Record<string, any> = {};
+
+// 運行状態生成関数（管理者設定の運行支障と連動）
 function getLiveTrainStatus() {
   const now = new Date();
   const timeStr = now.toLocaleString("ja-JP", {
@@ -31,10 +34,6 @@ function getLiveTrainStatus() {
     second: "2-digit",
   });
 
-  // 分数値に基づいて決定論的かつ時間によって変化する乱数遅延シミュレーション
-  const currentMinute = now.getMinutes();
-  
-  // デフォルト路線データ
   const lines = [
     {
       id: "kanzaki",
@@ -70,31 +69,59 @@ function getLiveTrainStatus() {
     },
   ];
 
-  // シミュレーションルール:
-  // - 10分〜20分の間: 埼千環状線で最大10分の遅延
-  // - 35分〜45分の間: 神埼線で約5分の遅延
-  // - それ以外: 全線平常運転
+  const disruptionKeys = Object.keys(activeDisruptions);
   let hasDelay = false;
-  let summary = "現在、神埼鉄道グループ全線でほぼ平常通り運転しております。";
+  const delayedNames: string[] = [];
 
-  if (currentMinute >= 10 && currentMinute < 20) {
-    lines[2].status = "一部遅延";
-    lines[2].delayMinutes = 10;
-    lines[2].message = "強風の影響により、大宮〜池袋間で最大約10分の遅延が発生しております。";
-    hasDelay = true;
-    summary = "【遅延情報】埼千環状線で最大約10分の遅延が発生しております。";
-  } else if (currentMinute >= 35 && currentMinute < 45) {
-    lines[0].status = "一部遅延";
-    lines[0].delayMinutes = 5;
-    lines[0].message = "混雑および安全確認の影響により、北千住〜大宮間で最大約5分の遅延が発生しております。";
-    hasDelay = true;
-    summary = "【遅延情報】神埼線で最大約5分の遅延が発生しております。";
+  if (disruptionKeys.length > 0) {
+    // 管理者からの指令発令データが存在する場合
+    lines.forEach((l) => {
+      const d = activeDisruptions[l.id] || (l.id === "saichi" ? activeDisruptions["saichi_loop"] : null);
+      if (d && d.statusType && d.statusType !== "normal") {
+        hasDelay = true;
+        if (d.statusType === "suspended") {
+          l.status = "運転見合わせ";
+          l.delayMinutes = 0;
+          delayedNames.push(`${l.lineName}(見合わせ)`);
+        } else if (d.statusType === "partially_suspended") {
+          l.status = "一部運休";
+          l.delayMinutes = d.maxDelayMinutes || 5;
+          delayedNames.push(`${l.lineName}(一部運休)`);
+        } else if (d.statusType === "delay") {
+          l.status = d.maxDelayMinutes > 0 ? `遅延 (最大約${d.maxDelayMinutes}分)` : "一部遅延";
+          l.delayMinutes = d.maxDelayMinutes || 5;
+          delayedNames.push(`${l.lineName}(遅延)`);
+        }
+
+        if (d.useCustomMessage && d.customMessage && d.customMessage.trim()) {
+          l.message = d.customMessage.trim();
+        } else if (d.statusType === "suspended") {
+          l.message = `現在、${d.section || "全線"}での${d.reason || "安全確認"}の影響により、運転を見合わせております。${d.durationUntil ? `（${d.durationUntil}再開見込み）` : ""}`;
+        } else if (d.statusType === "partially_suspended") {
+          l.message = `現在、${d.reason || "安全確認"}の影響により、${d.section || "全線"}で一部列車の運転を取り止めております。`;
+        } else {
+          l.message = `現在、${d.section || "全線"}での${d.reason || "安全確認"}の影響により、最大約${d.maxDelayMinutes || 5}分の遅延が発生しております。${d.durationUntil ? `（${d.durationUntil}復旧見込み）` : ""}`;
+        }
+      }
+    });
+
+    const summary = hasDelay
+      ? `【運行支障情報】${delayedNames.join("、")}が発生しております。`
+      : "現在、神埼鉄道グループ全線でほぼ平常通り運転しております。";
+
+    return {
+      updatedAt: timeStr,
+      hasDelay,
+      summary,
+      lines,
+    };
   }
 
+  // 管理者発令がない場合の平常時
   return {
     updatedAt: timeStr,
-    hasDelay,
-    summary,
+    hasDelay: false,
+    summary: "現在、神埼鉄道グループ全線でほぼ平常通り運転しております。",
     lines,
   };
 }
@@ -121,6 +148,19 @@ let latestOrderId = "EQ-84920";
 app.get("/api/status", (req, res) => {
   const status = getLiveTrainStatus();
   res.json(status);
+});
+
+// 1.1 管理者運行指令API (/api/disruptions)
+app.get("/api/disruptions", (req, res) => {
+  res.json({ disruptions: activeDisruptions });
+});
+
+app.post("/api/disruptions", (req, res) => {
+  if (req.body && req.body.disruptions) {
+    activeDisruptions = req.body.disruptions;
+    return res.json({ status: "ok", message: "Disruptions updated", count: Object.keys(activeDisruptions).length });
+  }
+  res.json({ status: "ok", message: "No changes" });
 });
 
 // 2. 特急券予約情報API (/api/reservation)

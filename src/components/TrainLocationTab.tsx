@@ -3,6 +3,7 @@ import { ChevronRight, ChevronDown, ChevronUp, Info, HelpCircle, AlertCircle, Ar
 import { getTsuchiuraLiveTrains } from '../utils/tsuchiuraTimetable';
 import { LocationStationDetailCard, LocationStationInfo } from './LocationStationDetailCard';
 import { sendLocalPushNotification } from '../utils/pushNotification';
+import { disruptionManager } from '../utils/disruptionManager';
 
 export interface StationNode {
   id: string;
@@ -398,7 +399,15 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
     const timer = setInterval(() => {
       setNow(Date.now());
     }, 2000);
-    return () => clearInterval(timer);
+
+    const unsubscribe = disruptionManager.subscribe(() => {
+      setNow(Date.now());
+    });
+
+    return () => {
+      clearInterval(timer);
+      unsubscribe();
+    };
   }, []);
 
   const activeLine = LINES_DATA.find((l) => l.id === activeLineId) || LINES_DATA[0];
@@ -409,7 +418,18 @@ export const TrainLocationTab: React.FC<TrainLocationTabProps> = () => {
   // 発車時刻・経過時間に基づいた動的リアルタイム列車計算
   const computeLiveTrains = (): LiveTrainPos[] => {
     if (activeLineId === 'tsuchiura') {
-      return getTsuchiuraLiveTrains(now, direction, displayStations);
+      const baseTrains = getTsuchiuraLiveTrains(now, direction, displayStations);
+      const eff = disruptionManager.getEffectiveDelayForTrain('tsuchiura');
+      if (eff.isSuspended) {
+        return baseTrains.map((t) => ({ ...t, delayMinutes: 99 }));
+      }
+      if (eff.delayMinutes > 0) {
+        return baseTrains.map((t) => {
+          const trainEff = disruptionManager.getEffectiveDelayForTrain('tsuchiura', t.id);
+          return { ...t, delayMinutes: trainEff.delayMinutes > 0 ? trainEff.delayMinutes : t.delayMinutes };
+        });
+      }
+      return baseTrains;
     }
 
     const trains: LiveTrainPos[] = [];
@@ -527,8 +547,18 @@ const LIVE_LINE_STOP_STATIONS: Record<string, Record<string, string[]>> = {
 
       const seed = Math.abs(Math.sin(trainStartTime / 100000)) * 10000;
       const trainType = config.trainTypes[Math.floor(seed) % config.trainTypes.length];
-      // 全路線・上下線あわせても総合的に約1〜2%以下の極めて稀な発生確率 (1/300 ≒ 0.3%)
-      const delayMinutes = Math.floor(seed) % 300 === 0 ? Math.floor(seed % 3) + 1 : 0;
+      
+      // 管理者運行指令による実効遅延（1〜最大遅延分の乱数）または通常時の微小遅延
+      const effectiveDelay = disruptionManager.getEffectiveDelayForTrain(activeLineId, trainStartTime);
+      let delayMinutes = 0;
+      if (effectiveDelay.isSuspended) {
+        delayMinutes = 99; // 運転見合わせフラグ
+      } else if (effectiveDelay.delayMinutes > 0) {
+        delayMinutes = effectiveDelay.delayMinutes;
+      } else {
+        // 全路線・上下線あわせても総合的に約1〜2%以下の極めて稀な発生確率 (1/300 ≒ 0.3%)
+        delayMinutes = Math.floor(seed) % 300 === 0 ? Math.floor(seed % 3) + 1 : 0;
+      }
 
       const lineStops = LIVE_LINE_STOP_STATIONS[activeLineId] || LIVE_LINE_STOP_STATIONS.kanzaki;
       const allowedStops = lineStops[trainType] || lineStops['各停'] || [];
