@@ -460,7 +460,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
     >
       <div
         id="admin-console-modal-card"
-        className="bg-[#1A1D24] border border-[#2D3342] rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-xl text-slate-200 overflow-hidden relative"
+        className="bg-[#1A1D24] border border-[#2D3342] rounded-2xl w-full max-w-xl h-[620px] max-h-[92vh] flex flex-col shadow-2xl text-slate-200 overflow-hidden relative"
       >
         {/* Header - Calm Slate Header */}
         <div className="px-4 py-3 bg-[#212631] border-b border-[#2D3342] flex items-center justify-between shrink-0">
@@ -474,7 +474,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                   システム管理・緊急対策コンソール
                 </span>
                 <span className="px-1.5 py-0.2 bg-[#2D3342] text-slate-300 text-[10px] font-mono rounded">
-                  v3.8.0
+                  v3.8.1
                 </span>
               </div>
               <p className="text-[10px] text-slate-400">
@@ -519,43 +519,48 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
         {/* Modal Body */}
         {!isAuthenticated ? (
           /* ========================================================
-             1. Passcode Authentication Screen (Strict Verification)
+             1. Passcode Authentication Screen (Fixed-Height Zero-Jumping Layout)
              ======================================================== */
-          <div className="p-6 flex flex-col items-center justify-center text-center space-y-4">
-            <div className="w-11 h-11 rounded-xl bg-[#252B38] border border-[#333B4C] flex items-center justify-center text-slate-300">
-              <KeyRound className="w-5 h-5" />
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-3.5 min-h-0 select-none">
+            <div className="w-12 h-12 rounded-2xl bg-[#252B38] border border-[#333B4C] flex items-center justify-center text-indigo-400 shadow-inner">
+              <KeyRound className="w-6 h-6" />
             </div>
 
-            <div className="space-y-0.5">
-              <h3 className="text-sm font-semibold text-slate-100">管理者パスコードを入力</h3>
+            <div className="space-y-1">
+              <h3 className="text-sm font-bold text-slate-100">管理者パスコードを入力</h3>
               <p className="text-[11px] text-slate-400">
-                運行システム診断・緊急時復旧ツールを開きます
+                運行システム診断・運行指令ツールを開きます
               </p>
             </div>
 
             {/* PIN Indicator Dots */}
-            <div className="flex items-center justify-center gap-2.5 py-1.5">
+            <div className="flex items-center justify-center gap-3 py-1">
               {[0, 1, 2, 3].map((index) => (
                 <div
                   key={index}
-                  className={`w-3 h-3 rounded-full transition-all duration-150 ${
+                  className={`w-3.5 h-3.5 rounded-full transition-all duration-150 ${
                     pinInput.length > index
-                      ? 'bg-slate-200'
+                      ? 'bg-amber-400 scale-110 shadow-xs shadow-amber-400/40'
                       : 'bg-[#2D3342] border border-[#3D4558]'
                   }`}
                 />
               ))}
             </div>
 
-            {pinError && (
-              <p className="text-[11px] text-rose-400 flex items-center gap-1">
-                <AlertCircle className="w-3.5 h-3.5" />
+            {/* Fixed Height Slot: Prevents layout stretching when wrong PIN is entered */}
+            <div className="h-5 flex items-center justify-center">
+              <p
+                className={`text-[11px] text-rose-400 font-medium flex items-center gap-1 transition-opacity duration-150 ${
+                  pinError ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                }`}
+              >
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                 <span>パスコードが正しくありません</span>
               </p>
-            )}
+            </div>
 
-            {/* Numeric Keypad - Calm Rounded Buttons */}
-            <div className="grid grid-cols-3 gap-2 w-52 max-w-full pt-1">
+            {/* Numeric Keypad */}
+            <div className="grid grid-cols-3 gap-2 w-56 max-w-full">
               {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map((k) => (
                 <button
                   key={k}
@@ -564,10 +569,10 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                     else if (k === '⌫') handleKeypadBackspace();
                     else handleKeypadPress(k);
                   }}
-                  className={`h-9 rounded-lg font-mono text-sm font-medium transition-colors flex items-center justify-center cursor-pointer ${
+                  className={`h-11 rounded-xl font-mono text-sm font-medium transition-all active:scale-95 flex items-center justify-center cursor-pointer ${
                     k === 'C' || k === '⌫'
-                      ? 'bg-[#212631] text-slate-400 hover:bg-[#2B3240] hover:text-slate-200 text-xs'
-                      : 'bg-[#252B38] hover:bg-[#2F3647] text-slate-200 border border-[#333B4C]'
+                      ? 'bg-[#212631] text-slate-400 hover:bg-[#2B3240] hover:text-slate-200 text-xs font-sans'
+                      : 'bg-[#252B38] hover:bg-[#2F3647] text-slate-200 border border-[#333B4C] hover:border-slate-500 shadow-xs'
                   }`}
                 >
                   {k}
@@ -577,11 +582,11 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
           </div>
         ) : (
           /* ========================================================
-             2. Authenticated Admin Dashboard
+             2. Authenticated Admin Dashboard (Fixed Tab Frame)
              ======================================================== */
-          <div className="flex flex-col flex-1 overflow-hidden">
+          <div className="flex flex-col flex-1 overflow-hidden min-h-0">
             {/* Sub Nav Tabs */}
-            <div className="px-3 bg-[#212631] border-b border-[#2D3342] flex gap-1 overflow-x-auto shrink-0">
+            <div className="px-3 bg-[#212631] border-b border-[#2D3342] flex gap-1 overflow-x-auto shrink-0 scrollbar-none">
               <button
                 onClick={() => setActiveTab('disruption')}
                 className={`px-3 py-2 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 border-b-2 ${
@@ -1590,38 +1595,40 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {/* Keys List */}
-                    <div className="space-y-1 max-h-60 overflow-y-auto pr-0.5">
-                      <span className="text-[10px] text-slate-400 block">キー一覧</span>
-                      {metrics.storageKeys.length === 0 ? (
-                        <p className="text-slate-500 p-2 bg-[#212631] rounded text-[11px]">キーが存在しません</p>
-                      ) : (
-                        metrics.storageKeys.map((key) => (
-                          <button
-                            key={key}
-                            onClick={() => handleInspectKey(key)}
-                            className={`w-full p-1.5 text-left rounded font-mono text-[11px] flex items-center justify-between transition-colors cursor-pointer ${
-                              selectedStorageKey === key
-                                ? 'bg-[#31394B] text-slate-100 font-medium'
-                                : 'bg-[#212631] hover:bg-[#282F3E] text-slate-400'
-                            }`}
-                          >
-                            <span className="truncate">{key}</span>
-                            <ChevronRight className="w-3 h-3 shrink-0" />
-                          </button>
-                        ))
-                      )}
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-slate-400 block font-medium">キー一覧</span>
+                      <div className="space-y-1 h-72 overflow-y-auto pr-1">
+                        {metrics.storageKeys.length === 0 ? (
+                          <p className="text-slate-500 p-2 bg-[#212631] rounded text-[11px]">キーが存在しません</p>
+                        ) : (
+                          metrics.storageKeys.map((key) => (
+                            <button
+                              key={key}
+                              onClick={() => handleInspectKey(key)}
+                              className={`w-full p-2 text-left rounded-lg font-mono text-[11px] flex items-center justify-between transition-colors cursor-pointer border ${
+                                selectedStorageKey === key
+                                  ? 'bg-[#31394B] text-slate-100 font-medium border-slate-500 shadow-xs'
+                                  : 'bg-[#212631] hover:bg-[#282F3E] text-slate-300 border-[#2D3342]'
+                              }`}
+                            >
+                              <span className="truncate">{key}</span>
+                              <ChevronRight className="w-3 h-3 shrink-0 text-slate-400" />
+                            </button>
+                          ))
+                        )}
+                      </div>
                     </div>
 
                     {/* Data Viewer */}
                     <div className="space-y-1">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-slate-400">
+                        <span className="text-[10px] text-slate-400 font-medium">
                           {selectedStorageKey ? `内容: ${selectedStorageKey}` : 'キーを選択'}
                         </span>
                         {selectedStorageKey && (
                           <button
                             onClick={() => handleDeleteStorageKey(selectedStorageKey)}
-                            className="text-rose-400 hover:text-rose-300 text-[10px] flex items-center gap-0.5"
+                            className="text-rose-400 hover:text-rose-300 text-[10px] flex items-center gap-0.5 cursor-pointer"
                           >
                             <Trash2 className="w-2.5 h-2.5" />
                             <span>削除</span>
@@ -1629,7 +1636,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                         )}
                       </div>
 
-                      <div className="p-2 bg-[#1A1D24] border border-[#2D3342] rounded-lg h-52 overflow-y-auto font-mono text-[10px] text-emerald-400">
+                      <div className="p-2.5 bg-[#171922] border border-[#2D3342] rounded-lg h-72 overflow-y-auto font-mono text-[10px] text-emerald-400">
                         {storageDataView ? (
                           <pre className="whitespace-pre-wrap break-all">{storageDataView}</pre>
                         ) : (

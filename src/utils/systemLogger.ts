@@ -1,5 +1,5 @@
 // System Logger & Diagnostics Engine for 神埼鉄道 NIIZAKI App
-// Version 3.8.0 (Emergency Incident Response & Disruption Dispatch System)
+// Version 3.8.1 (Emergency Incident Response & Disruption Dispatch System)
 
 export type LogLevel = 'error' | 'warn' | 'info' | 'critical';
 
@@ -326,7 +326,7 @@ export const systemLogger = {
   getMetrics: (): SystemMetrics => {
     if (typeof window === 'undefined') {
       return {
-        appVersion: 'v3.8.0',
+        appVersion: 'v3.8.1',
         environment: 'SSR',
         userAgent: '',
         deviceType: 'Other',
@@ -379,7 +379,7 @@ export const systemLogger = {
     }
 
     return {
-      appVersion: 'v3.8.0',
+      appVersion: 'v3.8.1',
       environment: process.env.NODE_ENV === 'production' ? 'Production' : 'Development',
       userAgent: ua,
       deviceType,
