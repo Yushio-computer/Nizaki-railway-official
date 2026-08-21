@@ -34,9 +34,12 @@ import {
   DisruptionStatusType,
   DEFAULT_LINE_INFOS,
   COMMON_REASONS,
+  COMMON_REASON_CATEGORIES,
   COMMON_SECTIONS,
   generateDisruptionText,
   getStationsForLine,
+  isWeatherRelatedReason,
+  getDurationPresetsForReason,
 } from '../utils/disruptionManager';
 
 interface AdminConsoleModalProps {
@@ -198,6 +201,24 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
       setSection('上り線のみ');
     } else if (mode === 'direction_down') {
       setSection('下り線のみ');
+    }
+  };
+
+  // Handle reason change with smart duration adaptation
+  const handleReasonSelect = (newReason: string) => {
+    setReason(newReason);
+    const isWeather = isWeatherRelatedReason(newReason);
+    const cat = COMMON_REASON_CATEGORIES.find((c) => c.reasons.includes(newReason));
+
+    // 大雨・強風・台風・大雪などの気象災害時は、時刻見込み（例: 18:30頃まで）は非現実的なため「天候回復次第」や「めど未定」に自動適応
+    if (isWeather) {
+      if (durationUntil.includes('頃') || durationUntil.includes('分後') || !durationUntil) {
+        setDurationUntil(cat?.defaultDuration || '天候回復次第');
+      }
+    } else if (cat) {
+      if (durationUntil === '天候回復次第' || durationUntil.includes('気象情報') || durationUntil.includes('風雨が収まり')) {
+        setDurationUntil(cat.defaultDuration);
+      }
     }
   };
 
@@ -552,7 +573,7 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                   神埼鉄道 管理者指令コンソール
                 </span>
                 <span className="px-1.5 py-0.5 bg-slate-700 text-slate-300 text-[10px] font-mono font-bold rounded">
-                  v3.9.0
+                  v3.10.0
                 </span>
               </div>
               <p className="text-[10px] text-slate-400">
@@ -1126,65 +1147,121 @@ export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
                           </div>
                         </div>
 
-                        {/* Reason Selection */}
-                        <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/80">
-                          <span className="text-[11px] text-slate-200 font-semibold flex items-center gap-1.5">
-                            <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
-                            <span>発生理由</span>
-                          </span>
+                        {/* Reason Selection (Categorized & Smart-Aware) */}
+                        <div className="space-y-2 bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/80">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-slate-200 font-semibold flex items-center gap-1.5">
+                              <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+                              <span>発生理由</span>
+                            </span>
+                            {isWeatherRelatedReason(reason) && (
+                              <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[9px] font-bold flex items-center gap-1">
+                                <span>🌧️ 気象・自然要因（天候回復待ち・目処未定推奨）</span>
+                              </span>
+                            )}
+                          </div>
+
                           <input
                             type="text"
                             value={reason}
-                            onChange={(e) => setReason(e.target.value)}
-                            placeholder="例: 車両点検のため、人身事故のため"
+                            onChange={(e) => handleReasonSelect(e.target.value)}
+                            placeholder="例: 大雨のため、強風のため、車両点検のため"
                             className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-slate-100 text-xs font-medium focus:outline-none focus:border-amber-400"
                           />
-                          <div className="flex flex-wrap gap-1 pt-0.5">
-                            {COMMON_REASONS.map((r) => (
-                              <button
-                                key={r}
-                                onClick={() => setReason(r)}
-                                className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
-                                  reason === r
-                                    ? 'bg-slate-700 text-amber-300 border border-amber-400/50 font-bold'
-                                    : 'bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700'
-                                }`}
-                              >
-                                {r}
-                              </button>
+
+                          {/* Categorized Reason Buttons */}
+                          <div className="space-y-1.5 pt-0.5">
+                            {COMMON_REASON_CATEGORIES.map((catGroup) => (
+                              <div key={catGroup.category} className="space-y-0.5">
+                                <span className="text-[9px] text-slate-400 font-medium block">
+                                  {catGroup.category}:
+                                </span>
+                                <div className="flex flex-wrap gap-1">
+                                  {catGroup.reasons.map((r) => (
+                                    <button
+                                      key={r}
+                                      type="button"
+                                      onClick={() => handleReasonSelect(r)}
+                                      className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
+                                        reason === r
+                                          ? 'bg-amber-400 text-slate-950 font-bold shadow-xs'
+                                          : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-750 border border-slate-700'
+                                      }`}
+                                    >
+                                      {r}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
                             ))}
                           </div>
                         </div>
 
-                        {/* Duration / Until */}
-                        <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/80">
-                          <span className="text-[11px] text-slate-200 font-semibold flex items-center gap-1.5">
-                            <Clock3 className="w-3.5 h-3.5 text-amber-400" />
-                            <span>いつまで（復旧見込み時間）</span>
-                          </span>
+                        {/* Duration / Until (Weather & Context Aware) */}
+                        <div className="space-y-2 bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/80">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-slate-200 font-semibold flex items-center gap-1.5">
+                              <Clock3 className="w-3.5 h-3.5 text-amber-400" />
+                              <span>復旧・運転再開見込み</span>
+                            </span>
+                            {isWeatherRelatedReason(reason) ? (
+                              <span className="text-[10px] text-amber-300 font-medium">
+                                ※大雨・強風等では定刻予測ではなく「天候回復次第」等を推奨
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400">
+                                (点検終了や現場検証完了の目安)
+                              </span>
+                            )}
+                          </div>
+
                           <input
                             type="text"
                             value={durationUntil}
                             onChange={(e) => setDurationUntil(e.target.value)}
-                            placeholder="例: 18:30頃まで、1時間後、終日、復旧見込み立たず"
+                            placeholder={
+                              isWeatherRelatedReason(reason)
+                                ? '例: 天候回復次第、現時点で復旧のめどは立っていません'
+                                : '例: 18:30頃まで、点検完了次第'
+                            }
                             className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-slate-100 text-xs font-medium focus:outline-none focus:border-amber-400"
                           />
-                          <div className="flex flex-wrap gap-1 pt-0.5">
-                            {['設定なし', '15分後', '30分後', '1時間後', '18:30頃まで', '終日', '復旧見込み立たず'].map(
-                              (dur) => (
+
+                          {/* Dynamic Smart Presets based on selected Reason */}
+                          <div className="space-y-1 pt-0.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[9px] text-slate-400 font-medium">
+                                推奨プリセット ({reason.replace('のため', '')}):
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setDurationUntil('')}
+                                className={`text-[9px] px-1.5 py-0.5 rounded cursor-pointer ${
+                                  !durationUntil
+                                    ? 'bg-slate-700 text-amber-300 font-bold'
+                                    : 'text-slate-400 hover:text-slate-200'
+                                }`}
+                              >
+                                設定なし（記載なし）
+                              </button>
+                            </div>
+
+                            <div className="flex flex-wrap gap-1">
+                              {getDurationPresetsForReason(reason).map((dur) => (
                                 <button
                                   key={dur}
-                                  onClick={() => setDurationUntil(dur === '設定なし' ? '' : dur)}
+                                  type="button"
+                                  onClick={() => setDurationUntil(dur)}
                                   className={`px-2 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
-                                    (dur === '設定なし' && !durationUntil) || durationUntil === dur
-                                      ? 'bg-slate-700 text-amber-300 border border-amber-400/50 font-bold'
-                                      : 'bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700'
+                                    durationUntil === dur
+                                      ? 'bg-indigo-600 text-white font-bold border border-indigo-400 shadow-xs'
+                                      : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-750 border border-slate-700'
                                   }`}
                                 >
                                   {dur}
                                 </button>
-                              )
-                            )}
+                              ))}
+                            </div>
                           </div>
                         </div>
                       </div>

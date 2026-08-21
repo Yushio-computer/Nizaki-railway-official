@@ -73,18 +73,72 @@ export const getStationsForLine = (lineId: string): string[] => {
   return LINE_STATIONS[lineId] || LINE_STATIONS.kanzaki || [];
 };
 
-export const COMMON_REASONS = [
-  '車両点検のため',
-  '人身事故のため',
-  '強風のため',
-  '大雨のため',
-  '信号確認のため',
-  '線路内立ち入りのため',
-  '急病人救護のため',
-  '混雑および安全確認のため',
-  '飛来物挟み込みのため',
-  '変電所設備点検のため',
+export const COMMON_REASON_CATEGORIES = [
+  {
+    category: '気象・自然災害（天候回復待ち・目処未定）',
+    isWeatherOrNatural: true,
+    reasons: [
+      '大雨のため',
+      '強風のため',
+      '大雪・路面凍結のため',
+      '台風接近に伴う風雨警戒のため',
+      '落雷による信号設備障害のため',
+      '地震警戒・線路点検のため',
+      '線路浸水・冠水のため',
+      '倒木・飛来物挟み込みのため',
+      '沿線火災のため',
+    ],
+    defaultDuration: '天候回復次第',
+    durationPresets: [
+      '天候回復次第',
+      '現時点で復旧・再開のめどは立っていません',
+      '風雨が収まり安全確認が取れ次第',
+      '今後の気象情報にご注意ください',
+      '終日運転見合わせの可能性あり',
+    ],
+  },
+  {
+    category: '車両・設備点検（復旧見込み時間あり）',
+    isWeatherOrNatural: false,
+    reasons: [
+      '車両点検のため',
+      '信号確認のため',
+      '変電所設備点検のため',
+      '架線確認のため',
+      '踏切内安全確認のため',
+      '分岐器（ポイント）不転換のため',
+    ],
+    defaultDuration: '18:30頃まで',
+    durationPresets: [
+      '約15〜30分で復帰見込み',
+      '点検完了次第',
+      '18:30頃まで',
+      '19:00頃まで',
+      '終日一部列車に遅れ見込み',
+    ],
+  },
+  {
+    category: '旅客・事故対応（現場検証・救護）',
+    isWeatherOrNatural: false,
+    reasons: [
+      '人身事故のため',
+      '急病人救護のため',
+      '線路内立ち入りのため',
+      'お客様混雑および安全確認のため',
+      '荷物挟み込み対応のため',
+    ],
+    defaultDuration: '警察・消防の現場検証完了後',
+    durationPresets: [
+      '警察・消防の現場検証完了後',
+      '現場安全確認完了後',
+      '救護活動終了次第',
+      '約60〜90分後見込み',
+      '順次運転再開中',
+    ],
+  },
 ];
+
+export const COMMON_REASONS = COMMON_REASON_CATEGORIES.flatMap((c) => c.reasons);
 
 export const COMMON_SECTIONS: Record<string, string[]> = {
   kanzaki: ['全線', '東京 〜 大宮 間', '大宮 〜 横浜 間', '北千住 〜 草加 間', '調布 〜 新横浜 間'],
@@ -94,7 +148,41 @@ export const COMMON_SECTIONS: Record<string, string[]> = {
 };
 
 /**
+ * 理由文字列から気象災害・自然災害系かどうかを判定
+ */
+export function isWeatherRelatedReason(reason: string): boolean {
+  const weatherKeywords = ['雨', '風', '雪', '台風', '雷', '地震', '浸水', '冠水', '倒木', '飛来物', '火災', '天候', '気象'];
+  return weatherKeywords.some((kw) => reason.includes(kw));
+}
+
+/**
+ * 理由に適した復旧見込みプリセットを取得
+ */
+export function getDurationPresetsForReason(reason: string): string[] {
+  const found = COMMON_REASON_CATEGORIES.find((cat) => cat.reasons.includes(reason));
+  if (found) return found.durationPresets;
+
+  if (isWeatherRelatedReason(reason)) {
+    return [
+      '天候回復次第',
+      '現時点で復旧・再開のめどは立っていません',
+      '風雨が収まり安全確認が取れ次第',
+      '今後の気象情報にご注意ください',
+    ];
+  }
+
+  return [
+    '約15〜30分で復帰見込み',
+    '点検完了次第',
+    '18:30頃まで',
+    '警察・消防の現場検証完了後',
+    '現時点で復旧のめどは立っていません',
+  ];
+}
+
+/**
  * 鉄道公式アナウンス形式の自動文言生成関数
+ * 天候要因・復旧未定・時刻見込みなど状況に応じた自然な日本語文言を構築
  */
 export function generateDisruptionText(
   lineName: string,
@@ -109,32 +197,63 @@ export function generateDisruptionText(
   const cleanSection = section.trim() || '全線';
   const cleanReason = reason.trim() || '安全確認のため';
   const cleanUntil = durationUntil.trim();
+  const isWeather = isWeatherRelatedReason(cleanReason);
 
   if (statusType === 'normal') {
     return '現在、全線でほぼ平常通り運転しております。';
   }
 
+  // 運転見合わせ
   if (statusType === 'suspended') {
     let msg = `${timeStr}現在、${lineName}は、${cleanSection}での${cleanReason}の影響により、全線で運転を見合わせております。`;
     if (cleanUntil) {
-      msg += `（${cleanUntil}の運転再開を見込んでおります）`;
+      if (cleanUntil.includes('めど') || cleanUntil.includes('未定') || cleanUntil.includes('立っていません')) {
+        msg += '（現時点で運転再開・復旧のめどは立っておりません）';
+      } else if (cleanUntil.includes('次第') || cleanUntil.includes('完了後') || cleanUntil.includes('終了後')) {
+        msg += `（${cleanUntil}、順次運転再開を予定しております）`;
+      } else if (cleanUntil.includes('可能性あり') || cleanUntil.includes('ご注意')) {
+        msg += `（${cleanUntil}）`;
+      } else {
+        msg += `（${cleanUntil}の運転再開を見込んでおります）`;
+      }
+    } else if (isWeather) {
+      msg += '（天候回復および線路安全確認が取れ次第の再開となります）';
     }
     return msg;
   }
 
+  // 一部運休
   if (statusType === 'partially_suspended') {
     let msg = `${timeStr}現在、${lineName}は、${cleanReason}の影響により、${cleanSection}で一部列車の運転を取り止めております。`;
     if (cleanUntil) {
-      msg += `（${cleanUntil}まで継続見込み）`;
+      if (cleanUntil.includes('めど') || cleanUntil.includes('未定')) {
+        msg += '（現時点で通常運行復帰のめどは立っておりません）';
+      } else if (cleanUntil.includes('次第') || cleanUntil.includes('完了後')) {
+        msg += `（${cleanUntil}、通常ダイヤへ復旧予定です）`;
+      } else if (cleanUntil.includes('可能性あり') || cleanUntil.includes('ご注意')) {
+        msg += `（${cleanUntil}）`;
+      } else {
+        msg += `（${cleanUntil}まで継続見込み）`;
+      }
     }
     return msg;
   }
 
-  // statusType === 'delay'
+  // statusType === 'delay' (列車遅延)
   const delayStr = maxDelayMinutes > 0 ? `最大約${maxDelayMinutes}分` : '一部';
   let msg = `${timeStr}現在、${lineName}は、${cleanSection}での${cleanReason}の影響により、上下線で${delayStr}の遅れが発生しております。`;
   if (cleanUntil) {
-    msg += `（${cleanUntil}の平常運行再開を見込んでおります）`;
+    if (cleanUntil.includes('めど') || cleanUntil.includes('未定') || cleanUntil.includes('立っていません')) {
+      msg += '（天候・現場状況により、遅れの拡大や運転見合わせとなる可能性があります）';
+    } else if (cleanUntil.includes('次第') || cleanUntil.includes('完了後')) {
+      msg += `（${cleanUntil}、平常運転への回復を見込んでおります）`;
+    } else if (cleanUntil.includes('可能性あり') || cleanUntil.includes('ご注意')) {
+      msg += `（${cleanUntil}）`;
+    } else {
+      msg += `（${cleanUntil}の平常運行再開を見込んでおります）`;
+    }
+  } else if (isWeather) {
+    msg += '（天候の状況により遅れが拡大する場合がありますのでご注意ください）';
   }
   return msg;
 }
